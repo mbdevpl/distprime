@@ -1,7 +1,6 @@
-# unix_lab3_fix
+# distprime
 
-all: server
-#client
+all: server worker
 
 mbdev_unix.o: mbdev_unix.c mbdev_unix.h
 	gcc -Wall -c mbdev_unix.c
@@ -12,17 +11,16 @@ listfunctions.o: listfunctions.c listfunctions.h
 distprimeserver.o: distprimeserver.c
 	gcc -Wall -c distprimeserver.c
 
-#autoportclient.o: autoportclient.c
-#	gcc -Wall -c autoportclient.c
+distprimeworker.o: distprimeworker.c
+	gcc -Wall -c distprimeworker.c
 
 server: mbdev_unix.o listfunctions.o distprimeserver.o
-	gcc -Wall -o distprime mbdev_unix.o listfunctions.o distprimeserver.o
+	gcc -Wall -o distprime mbdev_unix.o listfunctions.o distprimeserver.o -lm
 
-#client: mbdev_unix.o autoportclient.o
-#	gcc -Wall -o client mbdev_unix.o autoportclient.o
+worker: mbdev_unix.o distprimeworker.o
+	gcc -Wall -o distprimeworker mbdev_unix.o listfunctions.o distprimeworker.o -lm
 
 .PHONY: clean
 
 clean:
-	rm server mbdev_unix.o listfunctions.o distprimeserver.o
-# client autoportclient.o
+	rm distprime distprimeworker mbdev_unix.o listfunctions.o distprimeserver.o distprimeworker.o

@@ -18,12 +18,16 @@
 #ifndef MBDEV_LISTFUNCTIONS_H
 #define MBDEV_LISTFUNCTIONS_H
 
+#include <stdlib.h>
 #include <malloc.h>
 #include <time.h>
 
+// type of data, can be safely changed to any integral, numerical data type
+typedef int64_t data_type;
+#define DATA_TYPE_FORMAT "%lli"
 
 struct list{ //one directional list
-    int val; //value
+    data_type val; //value
     struct list *next; //next element
 };
 
@@ -31,13 +35,13 @@ struct list{ //one directional list
 void listFunctionsTest();
 
 //creation or deletion of elements
-struct list* createElem(int n);
-struct list* generateRandomList(int len,int min,int max);
-void insertFront(struct list**head,int n);
-void insertAfter(struct list**head,int place,int n);
-void connect(struct list**elem1,struct list**elem2,int n);
-void insertEnd(struct list**head,int n);
-void removeFirst(struct list**head,int n);
+struct list* createElem(data_type n);
+struct list* generateRandomList(int len,data_type min,data_type max);
+void insertFront(struct list**head,data_type n);
+void insertAfter(struct list**head,int place,data_type n);
+void listConnect(struct list**elem1,struct list**elem2,data_type n);
+void insertEnd(struct list**head,data_type n);
+void removeFirst(struct list**head,data_type n);
 void freeList(struct list**head);
 
 //properties of lists
