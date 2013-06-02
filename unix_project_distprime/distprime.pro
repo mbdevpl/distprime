@@ -9,10 +9,12 @@ SOURCES += \
 	mbdev_unix.c \
 	listfunctions.c \
 	distprimeserver.c \
-    distprimeworker.c
+    distprimeworker.c \
+    distprimecommon.c
 
 HEADERS += \
 	mbdev_unix.h \
-	listfunctions.h
+	listfunctions.h \
+    distprimecommon.h
 
 OTHER_FILES += Makefile

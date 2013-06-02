@@ -1,16 +1,18 @@
 
 #include "listfunctions.h"
 #include "mbdev_unix.h"
+#include "distprimecommon.h"
 
-//#include <stdint.h> /uint64_t
 #include <stdbool.h> // bool true false
 #include <math.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#define IDLE 1
+#define GENERATING 2
+
 void usage();
 int main(int argc, char** argv);
-bool isPrime(int64_t number);
 void savePrimes(struct list**head, char* filename, const char* intro);
 
 void usage()
@@ -34,40 +36,14 @@ int main(int argc, char** argv)
 	char* outputFile = argv[3];
 
 	struct list* primes = NULL;
-	struct list* lastPrime = NULL;
+	//struct list* lastPrime = NULL;
 
-	int socket = 0;
-	int port = rand()%8001 + 2000;
-	struct sockaddr_in addr;
-	struct sockaddr_in sender_addr;
+	int socketIn;
+	struct sockaddr_in addrIn;
+	in_port_t portIn = (in_port_t)8765;
+	createSocketIn(&socketIn, &addrIn, INADDR_ANY, portIn, 10);
 
-	printf("starting at port %d\n", port);
-
-	socket = makeSocket(PF_INET,SOCK_DGRAM);
-
-	int reuseAddr = 1;
-	if(setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, &reuseAddr, sizeof(reuseAddr)) < 0)
-		ERR("setsockopt");
-
-	memset(&addr, 0, sizeof(struct sockaddr_in));
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	while(port < 10000)
-	{
-		addr.sin_port = htons(port);
-		if(bind(socket, (struct sockaddr*)&addr, sizeof(addr)) == 0)
-			break;
-		printf("error");
-		++port;
-	}
-	if(socket == 0)
-	{
-		addr.sin_port = htons(port);
-		if(bind(socket, (struct sockaddr*)&addr, sizeof(addr)) < 0)
-			ERR("bind");
-	}
-
-	printf("receiving on port %d\n",port);
+	printf("receiving on port %d\n", portIn);
 
 	//if(listen(socket, 5) < 0)
 	//	ERR("listen");
@@ -76,66 +52,89 @@ int main(int argc, char** argv)
 	//if((descriptor = TEMP_FAILURE_RETRY(accept(socket, NULL, NULL))) < 0)
 	//	ERR("accept");
 
-	char buffer[100];
-	memset(buffer, 0, 100 * sizeof(char));
+	int socketOut;
+	struct sockaddr_in addrOut;
+	in_port_t portOut = (in_port_t)rand()%10001 + 10000;
+	createSocketOut(&socketOut, &addrOut, INADDR_BROADCAST, portOut);
+
+	char bufferIn[100];
+	struct sockaddr_in sender_addr;
 	socklen_t sender_addr_size = sizeof(sender_addr);
-	if(recvfrom(socket, buffer, 100, 0, (struct sockaddr*)&sender_addr, &sender_addr_size) < 0)
-		ERR("recvfrom");
 
-	printf("received packet from %s:%d\nData: %s\n\n",
-		inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port), buffer);
+	char bufferOut[100];
 
-	closeSocket(socket);
-
-	int n;
-	int64_t i;
-	int64_t range = primeTo - primeFrom + 1;
-	for(i=primeFrom; i<=primeTo; ++i)
+	while(true)
 	{
-		if(isPrime(i))
-		{
-			if(primes == NULL)
-			{
-				primes = createElem((int)i);
-				lastPrime = primes;
-			}
-			else
-			{
-				insertAfter(&lastPrime, 1, (int)i);
-				lastPrime = lastPrime->next;
-			}
-		}
+		memset(bufferIn, 0, 100 * sizeof(char));
+		if(recvfrom(socketIn, bufferIn, 100, 0, (struct sockaddr*)&sender_addr, &sender_addr_size) < 0)
+			ERR("recvfrom");
 
-		if(n == 1000000)
+		printf("received packet from %s:%d\n", inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port));
+		printf("Data: %s\n", bufferIn);
+
+		if(strncmp(bufferIn, "distprimeworker ", 16) != 0)
+			continue;
+
+		char* buffer = bufferIn;
+		buffer += 16;
+		if(strncmp(buffer, "processes=", 10) == 0)
 		{
-			n = 0;
-			printf("%lldM/%lldM\n", (i-primeFrom) / 1000000, range / 1000000);
+			buffer += 10;
+
+			char* ch = strchr(buffer, ' ');
+			int len = ch-(buffer);
+			char procs[len+1];
+			strncpy(procs, buffer, len);
+			procs[len] = 0;
+			int processesCount = atoi(procs);
+
+			if(strncmp(buffer+len+1, "port=", 5) == 0)
+			{
+				int portNew = atoi(buffer+len+1+5);
+
+				printf(" added new client port=%d processesCount=%d\n", portNew, processesCount);
+
+				milisleepFor(1000);
+
+				printf("sending prmies range\n");
+
+				addrOut.sin_port = htons(portNew);
+				memset(bufferOut, 0, 100 * sizeof(char));
+				sprintf(bufferOut, "distprime primeFrom=%lld primeTo=%lld", primeFrom, primeTo);
+				int bytescount = 0;
+				if((bytescount = sendto(socketOut, bufferOut, 50, 0, (struct sockaddr *)&addrOut, sizeof(struct sockaddr_in))) < 0)
+					ERR("sendto");
+				printf("sent %d bytes to %d:%d\n", bytescount,
+					ntohl(addrOut.sin_addr.s_addr), ntohs(addrOut.sin_port));
+			}
 		}
-		++n;
+		else if(strncmp(buffer, "status ", 7) == 0)
+		{
+			buffer += 7;
+
+			int status = atoi(buffer);
+			switch(status)
+			{
+			case IDLE:
+				break;
+			case GENERATING:
+				break;
+			}
+		}
+		else if(strncmp(buffer, "primes ", 10) == 0)
+		{
+			//
+		}
 	}
-	//printf("\n");
-	printLnLen(&primes);
+
+	closeSocket(socketOut);
+	closeSocket(socketIn);
 
 	savePrimes(&primes, outputFile, "primes");
 
 	freeList(&primes);
 
 	return EXIT_SUCCESS;
-}
-
-bool isPrime(int64_t number)
-{
-	if (number <= 1)
-		return false;
-	double a = sqrt((double)number);
-	int64_t number_sqrt = (int64_t)ceil(a);
-	int64_t i;
-	for (i = 2; i <= number_sqrt; ++i)
-	{
-		if (number % i == 0)
-			return false;
-	}
-	return true;
 }
 
 void savePrimes(struct list**head, char* filename, const char* intro)

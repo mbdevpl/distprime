@@ -1,11 +1,17 @@
 
 #include "mbdev_unix.h"
 #include "listfunctions.h"
+#include "distprimecommon.h"
 
 #include <stdbool.h> // bool true false
+#include <math.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 void usage();
 int main(int argc, char** argv);
+bool isPrime(int64_t number);
+void generatePrimes(struct list** primes, int64_t primeFrom, int64_t primeTo);
 
 void usage()
 {
@@ -21,44 +27,117 @@ int main(int argc, char** argv)
 	printf("distprimeworker\n");
 	printf("Distributed prime numbers generation worker\n\n");
 
+	int port = (in_port_t)atoi(argv[1]);
+	int processes = atoi(argv[2]);
+	printf("will generate using %d processes\n", processes);
+
 	srand(getpid());
 
-	int socket;
-	struct sockaddr_in addr;
-	in_port_t port = (in_port_t)atoi(argv[1]);
+	int socketOut;
+	struct sockaddr_in addrOut;
+	//uint32_t addrOut = INADDR_BROADCAST;
+	in_port_t portOut = port;
+	createSocketOut(&socketOut, &addrOut, INADDR_BROADCAST, portOut);
 
-	//setSigHandler(SIG_IGN,SIGPIPE);
-	socket = makeSocket(PF_INET, SOCK_DGRAM);
+	printf("broadcasting to port %d...\n", portOut);
 
-	int broadcastEnable=1;
-	if(setsockopt(socket, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) < 0)
-		ERR("setsocketopt");
+	int socketIn;
+	struct sockaddr_in addrIn;
+	in_port_t portIn = (in_port_t)(rand()%10001 + 5000);
+	createSocketIn(&socketIn, &addrIn, INADDR_ANY, portIn, 5);
 
-	memset(&addr, '\0', sizeof(struct sockaddr_in));
-	addr.sin_family = AF_INET;
-	addr.sin_port = port; //(in_port_t)(rand()%10001 + 10000);
-	addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+	char bufferIn[100];
+	struct sockaddr_in sender_addr;
+	socklen_t sender_addr_size = sizeof(sender_addr);
 
-	printf("broadcasting from port %d...\n",addr.sin_port);
-
-	char buffer[100];
-	memset(buffer, 0, 100 * sizeof(char));
-	sprintf(buffer, "hello\n");
+	char bufferOut[100];
 
 	while(true)
 	{
+		memset(bufferOut, 0, 100 * sizeof(char));
+		sprintf(bufferOut, "distprimeworker processes=%d port=%d\n", processes, portIn);
 		int bytescount = 0;
-		if((bytescount = sendto(socket, buffer, 100, 0, (struct sockaddr *)&addr, sizeof(struct sockaddr_in))) < 0)
+		if((bytescount = sendto(socketOut, bufferOut, 60, 0, (struct sockaddr *)&addrOut, sizeof(struct sockaddr_in))) < 0)
 			ERR("sendto");
 
-		printf("sent %d bytes\n", bytescount);
+		printf("sent %d bytes to %d:%d\n", bytescount,
+			ntohl(addrOut.sin_addr.s_addr), ntohs(addrOut.sin_port));
 
-		milisleepFor(1000);
+		memset(bufferIn, 0, 100 * sizeof(char));
+		if(recvfrom(socketIn, bufferIn, 100, 0, (struct sockaddr*)&sender_addr, &sender_addr_size) < 0)
+			ERR("recvfrom");
+
+		printf("received %s\n", bufferIn);
+
+		struct list* primes = NULL;
+		generatePrimes(&primes, 2000000, 3000000);
+		printLnLen(&primes);
+
+		// receive
+
+//		int pid = fork();
+//		if(pid < 0)
+//			ERR("fork");
+
+//		switch(pid)
+//		{
+//		case 0:
+//			exitNormal();
+//			break;
+//		default:
+//			break;
+//		}
 	}
 
-	printf("will generate using %d processes\n", atoi(argv[2]));
 
-	closeSocket(socket);
+	closeSocket(socketOut);
+	closeSocket(socketIn);
 
 	return EXIT_SUCCESS;
+}
+
+bool isPrime(int64_t number)
+{
+	if (number <= 1)
+		return false;
+	double a = sqrt((double)number);
+	int64_t number_sqrt = (int64_t)ceil(a);
+	int64_t i;
+	for (i = 2; i <= number_sqrt; ++i)
+	{
+		if (number % i == 0)
+			return false;
+	}
+	return true;
+}
+
+void generatePrimes(struct list** primes, int64_t primeFrom, int64_t primeTo)
+{
+	struct list* lastPrime;
+	int n;
+	int64_t i;
+	int64_t range = primeTo - primeFrom + 1;
+	for(i=primeFrom; i<=primeTo; ++i)
+	{
+		if(isPrime(i))
+		{
+			if(*primes == NULL)
+			{
+				*primes = createElem((int)i);
+				lastPrime = *primes;
+			}
+			else
+			{
+				insertAfter(&lastPrime, 1, (int)i);
+				lastPrime = lastPrime->next;
+			}
+		}
+
+		if(n == 1000000)
+		{
+			n = 0;
+			printf("%lldM/%lldM\n", (i-primeFrom) / 1000000, range / 1000000);
+		}
+		++n;
+	}
 }
