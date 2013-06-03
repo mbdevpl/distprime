@@ -1,12 +1,5 @@
 
-#include "mbdev_unix.h"
-#include "listfunctions.h"
 #include "distprimecommon.h"
-
-#include <stdbool.h> // bool true false
-#include <math.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 
 void usage();
 int main(int argc, char** argv);
@@ -47,8 +40,7 @@ int main(int argc, char** argv)
 	createSocketIn(&socketIn, &addrIn, INADDR_ANY, portIn, 5);
 
 	char bufferIn[100];
-	struct sockaddr_in sender_addr;
-	socklen_t sender_addr_size = sizeof(sender_addr);
+	struct sockaddr_in addrSender;
 
 	char bufferOut[100];
 
@@ -57,16 +49,25 @@ int main(int argc, char** argv)
 		memset(bufferOut, 0, 100 * sizeof(char));
 		sprintf(bufferOut, "distprimeworker processes=%d port=%d\n", processes, portIn);
 		int bytescount = 0;
-		if((bytescount = sendto(socketOut, bufferOut, 60, 0, (struct sockaddr *)&addrOut, sizeof(struct sockaddr_in))) < 0)
-			ERR("sendto");
 
-		printf("sent %d bytes to %d:%d\n", bytescount,
-			ntohl(addrOut.sin_addr.s_addr), ntohs(addrOut.sin_port));
+		socketOutSend(socketOut, bufferOut, 60, &addrOut, &bytescount);
 
-		memset(bufferIn, 0, 100 * sizeof(char));
-		if(recvfrom(socketIn, bufferIn, 100, 0, (struct sockaddr*)&sender_addr, &sender_addr_size) < 0)
-			ERR("recvfrom");
+//		if((bytescount = sendto(socketOut, bufferOut, 60, 0, (struct sockaddr *)&addrOut, sizeof(struct sockaddr_in))) < 0)
+//			ERR("sendto");
+//		printf("sent %d bytes to %d:%d\n", bytescount,
+//			ntohl(addrOut.sin_addr.s_addr), ntohs(addrOut.sin_port));
 
+		socketInReceive(socketIn, bufferIn, 100, &addrSender, &bytescount);
+
+		if(bytescount == 0)
+		{
+			printf("no distprime server available...\n");
+			exitNormal();
+		}
+
+//		memset(bufferIn, 0, 100 * sizeof(char));
+//		if(TEMP_FAILURE_RETRY(recvfrom(socketIn, bufferIn, 100, 0, (struct sockaddr*)&sender_addr, &sender_addr_size) < 0))
+//			ERR("recvfrom");
 		printf("received %s\n", bufferIn);
 
 		struct list* primes = NULL;

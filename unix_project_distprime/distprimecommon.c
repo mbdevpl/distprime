@@ -18,8 +18,22 @@ void createSocketOut(int* socketOut, struct sockaddr_in* addr,
 	addr->sin_port = htons(portOut);
 }
 
+void socketOutSend(const int socketOut, char* bufferOut, const int bufferLen,
+							struct sockaddr_in* addrOut, int* sentBytes)
+{
+	*sentBytes = 0;
+	if((*sentBytes = sendto(socketOut, bufferOut, bufferLen, 0,
+			(struct sockaddr *)addrOut, sizeof(struct sockaddr_in))) < 0)
+	{
+		ERR("sendto");
+	}
+
+	printf("sent %d bytes to %d:%d\n", *sentBytes,
+		ntohl(addrOut->sin_addr.s_addr), ntohs(addrOut->sin_port));
+}
+
 void createSocketIn(int* socketIn, struct sockaddr_in* addr,
-						  uint32_t addressIn, in_port_t portIn, int timeoutSeconds)
+		uint32_t addressIn, in_port_t portIn, const int timeoutSeconds)
 {
 	*socketIn = makeSocket(PF_INET,SOCK_DGRAM);
 
@@ -43,4 +57,27 @@ void createSocketIn(int* socketIn, struct sockaddr_in* addr,
 
 	if(bind(*socketIn, (struct sockaddr*)addr, sizeof(*addr)) < 0)
 		ERR("bind");
+}
+
+void socketInReceive(const int socketIn, char* bufferIn, const int bufferLen,
+							struct sockaddr_in* addrSender, int* receivedBytes)
+{
+	socklen_t addrSenderSize = (socklen_t)sizeof(*addrSender);
+	*receivedBytes = 0;
+	memset(bufferIn, '\0', bufferLen * sizeof(char));
+	if((*receivedBytes = recvfrom(socketIn, bufferIn, bufferLen, 0,
+			(struct sockaddr*)addrSender, &addrSenderSize)) < 0)
+	{
+		switch(errno)
+		{
+		case EAGAIN:
+			*receivedBytes = 0;
+			return;
+		default:
+			ERR("recvfrom");
+		}
+	}
+
+	printf("received %d bytes from %s:%d\n", *receivedBytes,
+		inet_ntoa(addrSender->sin_addr), ntohs(addrSender->sin_port));
 }

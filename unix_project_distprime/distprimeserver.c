@@ -1,12 +1,5 @@
 
-#include "listfunctions.h"
-#include "mbdev_unix.h"
 #include "distprimecommon.h"
-
-#include <stdbool.h> // bool true false
-#include <math.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 
 #define IDLE 1
 #define GENERATING 2
@@ -41,7 +34,7 @@ int main(int argc, char** argv)
 	int socketIn;
 	struct sockaddr_in addrIn;
 	in_port_t portIn = (in_port_t)8765;
-	createSocketIn(&socketIn, &addrIn, INADDR_ANY, portIn, 10);
+	createSocketIn(&socketIn, &addrIn, INADDR_ANY, portIn, 5);
 
 	printf("receiving on port %d\n", portIn);
 
@@ -58,19 +51,27 @@ int main(int argc, char** argv)
 	createSocketOut(&socketOut, &addrOut, INADDR_BROADCAST, portOut);
 
 	char bufferIn[100];
-	struct sockaddr_in sender_addr;
-	socklen_t sender_addr_size = sizeof(sender_addr);
+	struct sockaddr_in addrSender;
+	//socklen_t sender_addr_size = sizeof(sender_addr);
 
 	char bufferOut[100];
 
 	while(true)
 	{
-		memset(bufferIn, 0, 100 * sizeof(char));
-		if(recvfrom(socketIn, bufferIn, 100, 0, (struct sockaddr*)&sender_addr, &sender_addr_size) < 0)
-			ERR("recvfrom");
+		int bytescount = 0;
+		socketInReceive(socketIn, bufferIn, 100, &addrSender, &bytescount);
 
-		printf("received packet from %s:%d\n", inet_ntoa(sender_addr.sin_addr), ntohs(sender_addr.sin_port));
-		printf("Data: %s\n", bufferIn);
+		if(bytescount == 0)
+		{
+			printf("waiting for clients...\n");
+			continue;
+		}
+
+		//memset(bufferIn, 0, 100 * sizeof(char));
+		//if(TEMP_FAILURE_RETRY(recvfrom(socketIn, bufferIn, 100, 0, (struct sockaddr*)&sender_addr, &sender_addr_size) < 0))
+		//	ERR("recvfrom");
+		//printf("received packet from %s:%d\n", inet_ntoa(addrSender.sin_addr), ntohs(sender_addr.sin_port));
+		//printf("Data: %s\n", bufferIn);
 
 		if(strncmp(bufferIn, "distprimeworker ", 16) != 0)
 			continue;
@@ -101,11 +102,12 @@ int main(int argc, char** argv)
 				addrOut.sin_port = htons(portNew);
 				memset(bufferOut, 0, 100 * sizeof(char));
 				sprintf(bufferOut, "distprime primeFrom=%lld primeTo=%lld", primeFrom, primeTo);
-				int bytescount = 0;
-				if((bytescount = sendto(socketOut, bufferOut, 50, 0, (struct sockaddr *)&addrOut, sizeof(struct sockaddr_in))) < 0)
-					ERR("sendto");
-				printf("sent %d bytes to %d:%d\n", bytescount,
-					ntohl(addrOut.sin_addr.s_addr), ntohs(addrOut.sin_port));
+
+				socketOutSend(socketOut, bufferOut, 50, &addrOut, &bytescount);
+//				if((bytescount = sendto(socketOut, bufferOut, 50, 0, (struct sockaddr *)&addrOut, sizeof(struct sockaddr_in))) < 0)
+//					ERR("sendto");
+//				printf("sent %d bytes to %d:%d\n", bytescount,
+//					ntohl(addrOut.sin_addr.s_addr), ntohs(addrOut.sin_port));
 			}
 		}
 		else if(strncmp(buffer, "status ", 7) == 0)
