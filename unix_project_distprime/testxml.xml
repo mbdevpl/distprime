@@ -1,0 +1,22 @@
+<!-- this file contains example messages that are sent
+	between server and workers -->
+
+<!-- sent from worker -->
+<distprimemsg>
+  <workerdata port="1239" processes="4" />
+</distprimemsg>
+
+<!-- sent from server -->
+<distprimemsg>
+  <primerange from="0" to="1000000" />
+</distprimemsg>
+
+<!-- sent from worker -->
+<distprimemsg>
+  <prime count="1">3</prime>
+</distprimemsg>
+
+<!-- sent from worker -->
+<distprimemsg>
+  <prime count="5">5,7,11,13,17</prime>
+</distprimemsg>

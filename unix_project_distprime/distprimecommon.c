@@ -1,7 +1,7 @@
 #include "distprimecommon.h"
 
 void createSocketOut(int* socketOut, struct sockaddr_in* addr,
-							uint32_t addressOut, in_port_t portOut)
+		uint32_t addressOut, in_port_t portOut)
 {
 	*socketOut = makeSocket(PF_INET, SOCK_DGRAM);
 
@@ -19,8 +19,10 @@ void createSocketOut(int* socketOut, struct sockaddr_in* addr,
 }
 
 void socketOutSend(const int socketOut, char* bufferOut, const int bufferLen,
-							struct sockaddr_in* addrOut, int* sentBytes)
+		const struct sockaddr_in* addrOut, int* sentBytes)
 {
+	//xmlDocPtr doc;
+
 	*sentBytes = 0;
 	if((*sentBytes = sendto(socketOut, bufferOut, bufferLen, 0,
 			(struct sockaddr *)addrOut, sizeof(struct sockaddr_in))) < 0)
@@ -28,7 +30,10 @@ void socketOutSend(const int socketOut, char* bufferOut, const int bufferLen,
 		ERR("sendto");
 	}
 
-	printf("sent %d bytes to %d:%d\n", *sentBytes,
+	if(*sentBytes < bufferLen)
+		printf(" * wanted to send %d bytes but sent less", bufferLen);
+
+	printf(" * sent %d bytes to %d:%d\n", *sentBytes,
 		ntohl(addrOut->sin_addr.s_addr), ntohs(addrOut->sin_port));
 }
 
@@ -60,7 +65,7 @@ void createSocketIn(int* socketIn, struct sockaddr_in* addr,
 }
 
 void socketInReceive(const int socketIn, char* bufferIn, const int bufferLen,
-							struct sockaddr_in* addrSender, int* receivedBytes)
+		struct sockaddr_in* addrSender, int* receivedBytes)
 {
 	socklen_t addrSenderSize = (socklen_t)sizeof(*addrSender);
 	*receivedBytes = 0;
@@ -78,6 +83,113 @@ void socketInReceive(const int socketIn, char* bufferIn, const int bufferLen,
 		}
 	}
 
-	printf("received %d bytes from %s:%d\n", *receivedBytes,
+	printf(" * received %d bytes from %s:%d\n", *receivedBytes,
 		inet_ntoa(addrSender->sin_addr), ntohs(addrSender->sin_port));
+}
+
+xmlDocPtr commCreateDoc()
+{
+	return xmlNewDoc(XMLCHARS "1.0");
+}
+
+xmlNodePtr commCreateMsgNode()
+{
+	return xmlNewNode(NULL, XMLCHARS "distprimemsg");
+}
+
+xmlNodePtr commCreateWorkerdataNode(int port, int processes)
+{
+	xmlNodePtr node = xmlNewNode(NULL, XMLCHARS "workerdata");
+
+	char temp[32];
+
+	//memset(temp, '\0', 32 * sizeof(char));
+	//itoa(processes, temp);
+	//xmlNewProp(workerNode, XMLCHARS "ip", XMLCHARS "127.0.0.1");
+
+	memset(temp, '\0', 32 * sizeof(char));
+	itoa(port, temp);
+	xmlNewProp(node, XMLCHARS "port", XMLCHARS temp);
+
+	memset(temp, '\0', 32 * sizeof(char));
+	itoa(processes, temp);
+	xmlNewProp(node, XMLCHARS "processes", XMLCHARS temp);
+
+	return node;
+}
+
+xmlNodePtr commCreatePrimerangeNode(int from, int to)
+{
+	xmlNodePtr node = xmlNewNode(NULL, XMLCHARS "primerange");
+
+	char temp[32];
+
+	memset(temp, '\0', 32 * sizeof(char));
+	itoa(from, temp);
+	xmlNewProp(node, XMLCHARS "from", XMLCHARS temp);
+
+	memset(temp, '\0', 32 * sizeof(char));
+	itoa(to, temp);
+	xmlNewProp(node, XMLCHARS "to", XMLCHARS temp);
+
+	return node;
+}
+
+xmlDocPtr commStringToXml(char* buffer, int bufferLen)
+{
+	xmlDocPtr doc = xmlReadMemory(buffer, bufferLen, "noname.xml", NULL,
+			XML_PARSE_RECOVER | XML_PARSE_NOBLANKS);
+	return doc;
+}
+
+void commXmlToString(xmlDocPtr doc, char* buffer, int* writtenBufferLen, int bufferLen)
+{
+	xmlChar* xmlBuf;
+	int xmlBufSize;
+
+	// everything in one line
+	//xmlDocDumpMemory(doc, &xmlBuf, &xmlBufSize);
+	// fancy indentation
+	xmlDocDumpFormatMemory(doc, &xmlBuf, &xmlBufSize, 1);
+
+	memset(buffer, '\0', bufferLen * sizeof(char));
+	if(xmlBufSize >= bufferLen)
+	{
+		*writtenBufferLen = 0;
+		return;
+	}
+
+	sprintf(buffer, "%s\n", CHARS xmlBuf);
+	*writtenBufferLen = xmlBufSize;
+}
+
+int commGetMsgType(xmlDocPtr doc)
+{
+	if(doc == NULL)
+		return MSG_NULL;
+
+	xmlNodePtr root = xmlDocGetRootElement(doc);
+
+	if(root == NULL
+		|| strncmp(CHARS root->name, "distprimemsg", 12) != 0
+		|| xmlChildElementCount(root) == 0)
+		return MSG_INVALID;
+
+	return MSG_VALID;
+}
+
+int commGetMsgpartType(xmlNodePtr part)
+{
+	if(part == NULL)
+		return MSGPART_NULL;
+
+	const char* partName = CHARS part->name;
+	if(strncmp(partName, "workerdata", 10) == 0)
+		return MSGPART_WORKERDATA;
+	else if(strncmp(partName, "primerange", 10) == 0)
+		return MSGPART_PRIMERANGE;
+	else if(strncmp(partName, "prime", 10) == 0)
+		return MSGPART_PRIME;
+
+	return MSGPART_INVALID;
 }
