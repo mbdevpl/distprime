@@ -181,6 +181,19 @@ struct list* smallest(struct list**head){
     return temp;
 }
 
+int listLength(struct list**head)
+{
+	if(head == NULL)
+		return -1;
+	struct list*temp;
+	int counter=0;
+	for(temp=*head;temp;temp=temp->next){
+		counter++;
+		if(temp->next==*head)break;
+	}
+	return counter;
+}
+
 //rearanging of elements
 
 void reverseList(struct list**head){

@@ -60,6 +60,8 @@
 
 void reverse(char* s);
 const char* itoa(int n, char* s);
+const char* ltoa(long n, char* s);
+const char* lltoa(long long n, char* s);
 
 int setSigHandler( void (*f)(int), int sigNo);
 const char* sigToStr(int sig);

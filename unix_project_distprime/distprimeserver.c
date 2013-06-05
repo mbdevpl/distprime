@@ -1,13 +1,21 @@
 
 #include "distprimecommon.h"
 
-#define FIRSTLIMIT 10000000LL
+#define FIRSTLIMIT 4000000LL
 
 void usage();
 int main(int argc, char** argv);
-void processValidMsg(xmlDocPtr doc);
+void processValidMsg(xmlDocPtr doc, const in_addr_t sender);
 int64_t getPrimeRangeEnd(const int64_t rangeStart);
-void savePrimes(struct list**head, const char* filename);
+void savePrimes(struct list** head, const char* filename);
+
+static volatile int64_t primeRangeFrom;
+
+static volatile int64_t primeRangeTo;
+
+static volatile int64_t primeSentLast;
+
+static volatile char* outputFile;
 
 void usage()
 {
@@ -15,11 +23,28 @@ void usage()
 	exitNormal();
 }
 
-static volatile int64_t primeRangeFrom;
+void socketOutSendPrimesRange(const int socketOut, const struct sockaddr_in* addrOut,
+		int64_t primeFrom, int64_t primeTo)
+{
+	xmlDocPtr doc = commCreateDoc();
+	xmlNodePtr root = commCreateMsgNode();
+	xmlNodePtr primerange = commCreatePrimerangeNode(primeFrom, primeTo);
+	xmlDocSetRootElement(doc, root);
+	xmlAddChild(root, primerange);
 
-static volatile int64_t primeRangeTo;
+	char bufferOut[BUFSIZE_MAX];
+	int bytesOut = 0;
+	commXmlToString(doc, bufferOut, &bytesOut, BUFSIZE_MAX);
 
-static volatile int64_t primeSentLast;
+	//memset(bufferOut, 0, BUFSIZE_MAX * sizeof(char));
+	//sprintf(bufferOut, "distprime primeFrom=%lld primeTo=%lld", primeFrom, primeTo);
+
+	int bytesSent = 0;
+	while(bytesOut != bytesSent)
+		socketOutSend(socketOut, bufferOut, bytesOut, addrOut, &bytesSent);
+
+	xmlFreeDoc(doc);
+}
 
 int main(int argc, char** argv)
 {
@@ -28,7 +53,7 @@ int main(int argc, char** argv)
 
 	const int64_t primeFrom = (int64_t)atoll(argv[1]);
 	const int64_t primeTo = (int64_t)atoll(argv[2]);
-	const char* outputFile = argv[3];
+	/*const char**/ outputFile = argv[3];
 
 	if(primeFrom < 1 || primeTo < 1 || primeFrom > primeTo)
 		usage();
@@ -49,7 +74,6 @@ int main(int argc, char** argv)
 	primeRangeFrom = primeFrom;
 	primeRangeTo = primeTo;
 	primeSentLast = primeRangeFrom - 1;
-	struct list* primes = NULL;
 
 	int socketIn;
 	struct sockaddr_in addrIn;
@@ -97,7 +121,7 @@ int main(int argc, char** argv)
 			printf("received invalid xml content\n");
 			break;
 		case MSG_VALID:
-			processValidMsg(doc);
+			processValidMsg(doc, ntohl(addrSender.sin_addr.s_addr));
 			break;
 		default:
 			break;
@@ -115,7 +139,8 @@ int main(int argc, char** argv)
 //		printf("root children count %ld\n", xmlChildElementCount(rootNode));
 //		printf("root is text = %d\n", xmlNodeIsText(rootNode));
 
-		printf("====\n%s\n====\n", bufferIn);
+		if(msgType != MSG_VALID)
+			printf("====\n%s\n====\n", bufferIn);
 
 		if(doc != NULL)
 			xmlFreeDoc(doc);
@@ -124,15 +149,15 @@ int main(int argc, char** argv)
 	closeSocket(socketIn);
 	xmlCleanupParser();
 
-	savePrimes(&primes, outputFile);
-
-	freeList(&primes);
-
 	return EXIT_SUCCESS;
 }
 
-void processValidMsg(xmlDocPtr doc)
+void processValidMsg(xmlDocPtr doc, const in_addr_t senderAddress)
 {
+	int workerProcesses = -1;
+	int workerPort = -1;
+	int primeCount = -1;
+
 	xmlNodePtr root = xmlDocGetRootElement(doc);
 	xmlNodePtr part = root->children;
 	for(;part;part=part->next)
@@ -148,61 +173,72 @@ void processValidMsg(xmlDocPtr doc)
 			break;
 		case MSGPART_WORKERDATA:
 			{
-				int workerProcesses = -1;
-				int workerPort = -1;
-
 				xmlAttrPtr attr = part->properties;
 				for(;attr;attr=attr->next)
 				{
 					const char* attrName = CHARS attr->name;
-
 					if(strncmp(attrName, "port", 4) == 0)
 						workerPort = atoi(CHARS xmlNodeGetContent(attr->children));
 					else if(strncmp(attrName, "processes", 9) == 0)
 						workerProcesses = atoi(CHARS xmlNodeGetContent(attr->children));
-
 					//printf("found attr %s\n", attrName);
 				}
-
 				if(workerProcesses < 0 || workerPort < 0)
 					break;
-
 				partHandled = true;
-
 				printf(" added new worker port=%d processes=%d\n", workerPort, workerProcesses);
+			} break;
+		case MSGPART_PRIME:
+			{
+				xmlAttrPtr attr = part->properties;
+				for(;attr;attr=attr->next)
+				{
+					const char* attrName = CHARS attr->name;
+					if(strncmp(attrName, "count", 4) == 0)
+						primeCount = atoi(CHARS xmlNodeGetContent(attr->children));
+				}
+				if(primeCount < 0)
+					break;
+				printf(" received %d primes\n", primeCount);
 
-				//milisleepFor(2000);
-
-				printf("sending prmies range\n");
-
-				int64_t from = primeSentLast + 1;
-				int64_t to = getPrimeRangeEnd(from);
-
-				xmlDocPtr doc2 = commCreateDoc();
-				xmlNodePtr root2 = commCreateMsgNode();
-				xmlNodePtr primerange = commCreatePrimerangeNode(from, to);
-				xmlDocSetRootElement(doc2, root2);
-				xmlAddChild(root2, primerange);
-
-				char bufferOut[BUFSIZE_MAX];
-				int bytesOut = 0;
-				commXmlToString(doc2, bufferOut, &bytesOut, BUFSIZE_MAX);
-
-				//memset(bufferOut, 0, BUFSIZE_MAX * sizeof(char));
-				//sprintf(bufferOut, "distprime primeFrom=%lld primeTo=%lld", primeFrom, primeTo);
-
-				int socketOut;
-				struct sockaddr_in addrOut;
-				in_port_t portOut = (in_port_t)rand()%10001 + 10000;
-				createSocketOut(&socketOut, &addrOut, INADDR_BROADCAST, portOut);
-
-				int bytesSent = 0;
-				addrOut.sin_port = htons(workerPort);
-				socketOutSend(socketOut, bufferOut, bytesOut, &addrOut, &bytesSent);
-
-				primeSentLast = to;
-
-				closeSocket(socketOut);
+				char* contents = (char*)xmlNodeGetContent(part);
+				struct list* primes = NULL;
+				struct list* lastPrime = NULL;
+				int contentsLen = strnlen(contents, BUFSIZE_MAX);
+				if(contentsLen == BUFSIZE_MAX || contentsLen == 0)
+					break;
+				int i = 0;
+				//char* currentChar = contents;
+				while(i < contentsLen)
+				{
+					char* nextChar = strchr(contents,',');
+					//int len = nextChar - currentChar;
+					//char fragment[len+1];
+					//fragment[len] = '\0';
+					//strncpy(fragment, currentChar,
+					if(nextChar != NULL)
+						*nextChar = '\0';
+					int64_t prime = atoll(contents);
+					if(primes == NULL)
+					{
+						primes = createElem(prime);
+						lastPrime = primes;
+					}
+					else
+					{
+						insertAfter(&lastPrime, 1, prime);
+						lastPrime = lastPrime->next;
+					}
+					if(nextChar == NULL)
+						break;
+					i += nextChar+1-contents;
+					contents = nextChar+1;
+				}
+				printf("parsed primes list\n");
+				printLnLen(&primes);
+				partHandled = true;
+				savePrimes(&primes,(const char*)outputFile);
+				freeList(&primes);
 			} break;
 		default:
 			break;
@@ -210,14 +246,37 @@ void processValidMsg(xmlDocPtr doc)
 		if(!partHandled)
 			printf("message part was outside of protocol\n");
 	}
+
+	if(workerProcesses < 0 || workerPort < 0)
+		return;
+
+	int socketOut;
+	struct sockaddr_in addrOut;
+	//in_port_t portOut = (in_port_t)rand()%10001 + 10000;
+	createSocketOut(&socketOut, &addrOut, senderAddress, workerPort);
+
+	printf("sending prmies range\n");
+
+	int64_t from = primeSentLast + 1;
+	int64_t to = getPrimeRangeEnd(from);
+
+	socketOutSendPrimesRange(socketOut, &addrOut, from, to);
+
+	primeSentLast = to;
+
+	closeSocket(socketOut);
 }
 
 int64_t getPrimeRangeEnd(const int64_t rangeStart)
 {
-	if(rangeStart < 1)
+	if(rangeStart < 1 || rangeStart < primeRangeFrom)
 		return -1LL;
 	if(rangeStart == 1)
+	{
+		if(FIRSTLIMIT > primeRangeTo)
+			return primeRangeTo;
 		return FIRSTLIMIT;
+	}
 
 	// time needed to generate primes from range [a,b] is equal
 	// integral(sqrt(b))-integral(sqrt(a))
@@ -253,9 +312,6 @@ int64_t getPrimeRangeEnd(const int64_t rangeStart)
 
 	//double fx_min = x*x*a + x+b + c;
 
-	//inverse =
-	//double rangeEnd = 2.0*sqrtOfStart * sqrt(rangeStart - fx_min) - x_min;
-
 	//printf("sqrtOfStart=%f\n", sqrtOfStart);
 	//printf("a=%f\n", a);
 	//printf("b=%f\n", b);
@@ -267,14 +323,23 @@ int64_t getPrimeRangeEnd(const int64_t rangeStart)
 	//	- (0.6666667) * pow(rangeStart, 1.5);
 	//printf("test=%f\n", test);
 
+	if(delta < 0)
+		return -1LL;
+
+	int64_t rangeEnd;
+
 	if(delta > 0)
-		return (int64_t)llround((-b+sqrt(delta))/(2*a)) + rangeStart;
+		rangeEnd = (int64_t)llround((-b+sqrt(delta))/(2*a)) + rangeStart;
 	else if(delta == 0)
-		return -b/(2*a) + rangeStart;
-	return -1LL;
+		rangeEnd = -b/(2*a) + rangeStart;
+
+	if(rangeEnd > primeRangeFrom)
+		rangeEnd = primeRangeFrom;
+
+	return rangeEnd;
 }
 
-void savePrimes(struct list**head, const char* filename)
+void savePrimes(struct list** head, const char* filename)
 {
 	FILE* file = fopen(filename, "a");
 	struct list*temp;

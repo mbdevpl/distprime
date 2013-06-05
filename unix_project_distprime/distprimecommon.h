@@ -21,8 +21,9 @@
 #define MSGPART_PRIMERANGE 12
 #define MSGPART_PRIME 13
 
-//#define STATUS_IDLE 1
-//#define GENERATING 2
+#define STATUS_IDLE 1
+#define STATUS_COMPUTING 2
+#define STATUS_FINISHED 3
 
 #include <libxml/tree.h>
 #include <libxml/xmlwriter.h>
@@ -52,6 +53,8 @@ xmlNodePtr commCreateMsgNode();
 xmlNodePtr commCreateWorkerdataNode(int port, int processes);
 
 xmlNodePtr commCreatePrimerangeNode(int from, int to);
+
+xmlNodePtr commCreatePrimesNode(const int64_t* primes, const int primesCount);
 
 xmlDocPtr commStringToXml(char* buffer, int bufferLen);
 

@@ -25,7 +25,7 @@ void socketOutSend(const int socketOut, char* bufferOut, const int bufferLen,
 
 	*sentBytes = 0;
 	if((*sentBytes = sendto(socketOut, bufferOut, bufferLen, 0,
-			(struct sockaddr *)addrOut, sizeof(struct sockaddr_in))) < 0)
+			(const struct sockaddr *)addrOut, sizeof(struct sockaddr_in))) < 0)
 	{
 		ERR("sendto");
 	}
@@ -33,8 +33,8 @@ void socketOutSend(const int socketOut, char* bufferOut, const int bufferLen,
 	if(*sentBytes < bufferLen)
 		printf(" * wanted to send %d bytes but sent less", bufferLen);
 
-	printf(" * sent %d bytes to %d:%d\n", *sentBytes,
-		ntohl(addrOut->sin_addr.s_addr), ntohs(addrOut->sin_port));
+	printf(" * sent %d bytes to %s:%d\n", *sentBytes,
+		inet_ntoa(addrOut->sin_addr), ntohs(addrOut->sin_port));
 }
 
 void createSocketIn(int* socketIn, struct sockaddr_in* addr,
@@ -131,6 +131,39 @@ xmlNodePtr commCreatePrimerangeNode(int from, int to)
 	memset(temp, '\0', 32 * sizeof(char));
 	itoa(to, temp);
 	xmlNewProp(node, XMLCHARS "to", XMLCHARS temp);
+
+	return node;
+}
+
+xmlNodePtr commCreatePrimesNode(const int64_t* primes, const int primesCount)
+{
+	xmlNodePtr node = xmlNewNode(NULL, XMLCHARS "prime");
+
+	char temp[20];
+
+	memset(temp, '\0', 20 * sizeof(char));
+	itoa(primesCount, temp);
+	xmlNewProp(node, XMLCHARS "count", XMLCHARS temp);
+
+	char tempArr[20*primesCount];
+	memset(tempArr, '\0', 20*primesCount * sizeof(char));
+
+	int i;
+	int pos = 0;
+	int len;
+	for(i = 0; i < primesCount; ++i)
+	{
+		memset(temp, '\0', 20 * sizeof(char));
+		lltoa(primes[i], temp);
+		len = strlen(temp);
+		strncpy(tempArr+pos, temp, len);
+		pos+=len;
+		if(i == primesCount-1)
+			break;
+		tempArr[pos] = ',';
+		++pos;
+	}
+	xmlNodeSetContentLen(node, XMLCHARS tempArr, strlen(tempArr));
 
 	return node;
 }

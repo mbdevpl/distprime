@@ -49,6 +49,8 @@ struct list* findlast(struct list**head);
 struct list* findprev(struct list**head,struct list*elem);
 struct list* smallest(struct list**head);
 
+int listLength(struct list**head);
+
 //rearanging of elements
 void reverseList(struct list**head);
 void swap(struct list**head,struct list*elem1,struct list*elem2);

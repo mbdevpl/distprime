@@ -62,6 +62,42 @@ const char* itoa(int n, char* s)
 }
 
 
+const char* ltoa(long n, char* s)
+{
+	long i, sign;
+
+	if ((sign = n) < 0)
+		n = -n;
+	i = 0;
+	do {
+		s[i++] = n % 10 + '0';
+	} while ((n /= 10) > 0);
+	if (sign < 0)
+		s[i++] = '-';
+	s[i] = '\0';
+	reverse(s);
+	return s;
+}
+
+
+const char* lltoa(long long n, char* s)
+{
+	long long i, sign;
+
+	if ((sign = n) < 0)
+		n = -n;
+	i = 0;
+	do {
+		s[i++] = n % 10 + '0';
+	} while ((n /= 10) > 0);
+	if (sign < 0)
+		s[i++] = '-';
+	s[i] = '\0';
+	reverse(s);
+	return s;
+}
+
+
 /*!
  * \brief sets the handler for the specified signal
  *
