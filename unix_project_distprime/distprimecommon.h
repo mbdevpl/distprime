@@ -1,67 +1,54 @@
 #ifndef DISTPRIMECOMMON_H
 #define DISTPRIMECOMMON_H
 
-#include "listfunctions.h"
-#include "mbdev_unix.h"
+#include "defines.h"
 
-#include <stdbool.h> // bool true false
-#include <math.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#include "processdata.h"
+#include "workerdata.h"
+#include "serverdata.h"
 
-#define BUFSIZE_MAX 1024
+void addressCreate(struct sockaddr_in* address, uint32_t ip, in_port_t port);
 
-#define MSG_NULL 1
-#define MSG_INVALID 2
-#define MSG_VALID 3
+void socketCreate(int* socket, int timeoutSeconds, bool broadcastEnable,
+		bool reuseAddress);
 
-#define MSGPART_NULL MSG_NULL
-#define MSGPART_INVALID MSG_INVALID
-#define MSGPART_WORKERDATA 11
-#define MSGPART_PRIMERANGE 12
-#define MSGPART_PRIME 13
+void socketBind(int socket, struct sockaddr_in* addr);
 
-#define STATUS_IDLE 1
-#define STATUS_COMPUTING 2
-#define STATUS_FINISHED 3
+size_t socketSend(const int socket, const struct sockaddr_in* address,
+		const xmlDocPtr doc);
 
-#include <libxml/tree.h>
-#include <libxml/xmlwriter.h>
-#include <libxml/xmlmemory.h>
-#include <libxml/parser.h>
+size_t socketReceive(const int socket, struct sockaddr_in* senderAddress,
+		xmlDocPtr* doc);
 
-#define MY_ENCODING "UTF-8"
-#define XMLCHARS BAD_CAST
-#define CHARS (const char*)
+xmlDocPtr xmlDocCreate();
+xmlNodePtr xmlNodeCreateMsg();
+xmlNodePtr xmlNodeCreatePing();
 
-void createSocketOut(int* socketOut, struct sockaddr_in* addr,
-		uint32_t addressOut, in_port_t portOut);
+int processXml(xmlDocPtr doc, serverDataPtr* server, workerDataPtr* worker,
+		listPtr* processes);
+void preprocessXml(xmlDocPtr doc, listPtr contentTypes, listPtr content);
 
-void socketOutSend(const int socketOut, char* bufferOut, const int bufferLen,
-		const struct sockaddr_in* addrOut, int* sentBytes);
-
-void createSocketIn(int* socketIn, struct sockaddr_in* addr,
-		uint32_t addressIn, in_port_t portIn, const int timeoutSeconds);
-
-void socketInReceive(const int socketIn, char* bufferIn, const int bufferLen,
-		struct sockaddr_in* addrSender, int* receivedBytes);
-
-xmlDocPtr commCreateDoc();
-
-xmlNodePtr commCreateMsgNode();
-
-xmlNodePtr commCreateWorkerdataNode(int port, int processes);
-
-xmlNodePtr commCreatePrimerangeNode(int from, int to);
-
-xmlNodePtr commCreatePrimesNode(const int64_t* primes, const int primesCount);
-
-xmlDocPtr commStringToXml(char* buffer, int bufferLen);
-
-void commXmlToString(xmlDocPtr doc, char* buffer, int* writtenBufferLen, int bufferLen);
+xmlDocPtr stringToXml(const char* buffer, const int bufferLen);
+size_t xmlToString(xmlDocPtr doc, char* buffer, const int bufferLen);
 
 int commGetMsgType(xmlDocPtr doc);
-
 int commGetMsgpartType(xmlNodePtr part);
+
+/*
+//void createSocketOut(int* socketOut, struct sockaddr_in* addr,
+//		uint32_t addressOut, in_port_t portOut);
+
+//void socketOutSend(const int socketOut, char* bufferOut, const int bufferLen,
+//		const struct sockaddr_in* addrOut, int* sentBytes);
+
+//void createSocketIn(int* socketIn, struct sockaddr_in* addr,
+//		uint32_t addressIn, in_port_t portIn, const int timeoutSeconds);
+
+//void socketInReceive(const int socketIn, char* bufferIn, const int bufferLen,
+//		struct sockaddr_in* addrSender, int* receivedBytes);
+
+//xmlNodePtr xmlNodeCreatePrimes(const int from, const int to,
+//		const int primesCount, const int64_t* primes);
+*/
 
 #endif // DISTPRIMECOMMON_H

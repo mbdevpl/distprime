@@ -18,22 +18,32 @@
 #ifndef MBDEV_UNIX_H
 #define MBDEV_UNIX_H
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#include <string.h>
+#define _GNU_SOURCE
+
 #include <errno.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <math.h>
+#include <netdb.h>
 #include <signal.h>
+#include <stdbool.h> // bool true false
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
+#include <unistd.h>
+
+#include <arpa/inet.h>
+
+#include <netinet/in.h>
 
 #include <sys/un.h>
 #include <sys/socket.h>
-#include <netdb.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #ifndef TEMP_FAILURE_RETRY
 /*!
@@ -67,14 +77,17 @@ int setSigHandler( void (*f)(int), int sigNo);
 const char* sigToStr(int sig);
 void handlerSigchldDefault(int sig);
 
+unsigned int getGoodSeed();
+
 void exitWithError(const char* errorMsg);
 void exitNormal();
 
 void sleepFor(int t);
 void milisleepFor(int t);
 
-int64_t bulk_read(int fd, char* buf, size_t count);
-int64_t bulk_write(int fd, char* buf, size_t count);
+size_t bulk_read(int fd, char* buf, size_t count);
+size_t readUntil(int fd, char* buf, size_t count, char marker);
+size_t bulk_write(int fd, char* buf, size_t count);
 
 void addFlags(int descriptor, int addedFlags);
 

@@ -17,271 +17,512 @@
 
 #include "listfunctions.h"
 
-void listFunctionsTest(){
-    struct list*head=NULL,*elem1=NULL,*elem2; //this will be the data
-    //srand(time(0));
-    head=generateRandomList(20,0,9); //random list
-    selectionSort(&head);
-    reverseList(&head);
-    elem2=head;
-    listConnect(&elem1,&elem2,2);
-    head=elem1;
-    elem1=head;
-    elem2=elem1->next;
-    listConnect(&elem1,&elem2,1);
-    elem2=elem1->next;
-    listConnect(&elem1,&elem2,0);
-    printLnListAndLen(&head);
-    freeList(&head); //free() for every element of the list
-    //system("pause");
-    //return 0;
+void listTestAll()
+{
+	//this will be the data
+	listPtr list = NULL;
+	//listElemPtr elem1 = NULL, elem2 = NULL;
+
+	list = listCreate();
+	//selectionSort(&head);
+	//reverseList(&head);
+	listElemInsertEnd(list, (data_type)1);
+	listElemInsertEnd(list, (data_type)3);
+	listElemInsertEnd(list, (data_type)5);
+	listElemInsertEnd(list, (data_type)7);
+	listElemInsertEnd(list, (data_type)9);
+	listElemInsertFront(list, (data_type)0);
+	listElemInsertAfter(list, 1, (data_type)2);
+	listElemInsertBefore(list, 4, (data_type)4);
+	listElemInsertAfter(list, 5, (data_type)6);
+	listElemInsertBefore(list, 8, (data_type)8);
+
+	//elem1 = listElemGetFirst(head);
+	//elem2 = listElemIn;
+
+	listPrint(list, (FILE*)1);
+
+	//listConnect(&elem1,&elem2,2);
+	//head=elem1;
+	//elem1=head;
+	//elem2=elem1->next;
+	//listConnect(&elem1,&elem2,1);
+	//elem2=elem1->next;
+	//listConnect(&elem1,&elem2,0);
+	//printLnListAndLen(&head);
+
+	// free() for every element of the list
+	listFree(list);
+
+	//system("pause");
+	//return 0;
 }
 
 //creation or deletion of elements
 
-struct list* createElem(data_type n){
-    //creates new element of the list
-    struct list*newelem=(struct list*)malloc(sizeof(struct list));
-    newelem->val=n;
-    newelem->next=NULL;
-    return newelem;
-}
-
-struct list* generateRandomList(int len,data_type min,data_type max){
-    struct list*head=NULL,*temp;
-    int i;
-    if((len>0)&&(max>=min)){
-        head=createElem(rand()%(max-min+1)+min);
-        temp=head;
-        for(i=1;i<len;i++){
-            //newelem=;
-            temp->next=createElem(rand()%(max-min+1)+min);
-            temp=temp->next;
-        }
-    }
-    return head;
-}
-
-void insertFront(struct list**head,data_type n){
-    //inserts new element at the front
-    struct list*newelem=createElem(n);
-    newelem->next=*head;
-    *head=newelem; //changing the beginning of the list
-}
-
-void insertAfter(struct list**head,int place,data_type n){
-    //inserts new element after element numbered 'place'
-    //place = 4  ==>  after the fourth element
-    //place = 1  ==>  after the first element
-    //place = 0 or less  ==>  at the beginning
-    struct list*newelem,*temp,*after=NULL;
-    int counter=0;
-    if((place>0)&&(temp=*head)){
-        for(;temp->next;){
-            if(counter==place-1)
-                after=temp; //to remember after which elem. we insert new
-            counter++;
-            temp=temp->next;
-        }
-        if(after){ //inserting new elem. after 'after'
-            newelem=createElem(n);
-            temp=after->next;
-            after->next=newelem;
-            newelem->next=temp;
-        }
-        else insertEnd(head,n); //add the new elem. at the end
-    }
-    else insertFront(head,n); //add at the beginning (or create new list)
-}
-
-void listConnect(struct list**elem1,struct list**elem2,data_type n){
-    struct list*newelem;
-    newelem=createElem(n);
-    if(*elem1){
-        (*elem1)->next=newelem;
-        newelem->next=(*elem2);
-    }
-    else{
-        *elem1=newelem;
-        (*elem1)->next=(*elem2);
-    }
-}
-
-void insertEnd(struct list**head,data_type n){
-    //adds new element at the end of the list
-    struct list*newelem,*temp;
-    if((temp=*head)){ //nonempty list
-        newelem=createElem(n);
-        for(;temp->next;) //until next is not null
-            temp=temp->next; //go to the next elem.
-        temp->next=newelem; //next of last becomes our new elem.
-    }
-    else insertFront(head,n); //list is empty
-}
-
-void removeFirst(struct list**head,data_type n){
-    //removes the first occurence of value n from the list
-    struct list*temp=*head;
-    if(temp){
-        if((temp->val)==n) head=NULL; //one elem, equal to n
-        else if(temp->next){ //more then one elem
-            for(;temp->next;){
-                if((temp->next->val)==n){ //next elem. value equal to n
-                    struct list *removed=temp->next; //remember next elem
-                    temp->next=temp->next->next; //change pointer
-                    free(removed); //remove former next elem
-                    //and move to end, or more than one occur. will be remov.
-                    for(;temp->next;) temp=temp->next;
-                }else temp=temp->next;
-            }
-        } //else: nothing to remove, only one elem. and it is diffrent than n
-    } //else: nothing to remove, because the list has no elements
-}
-
-void freeList(struct list**head){
-    struct list*temp;
-    for(temp=*head;temp;temp=temp->next){
-        if(temp!=*head){
-            free(*head);
-            *head=temp;
-        }
-    }
-    if(*head){
-        free(*head);
-        *head=NULL;
-    }
-}
-
-//properties of lists
-
-struct list* findlast(struct list**head){
-    //finds last element of the list and returns a pointer to it
-    struct list*last;
-    if((last=*head))
-        for(;last->next;last=last->next);
-    return last;
-}
-
-struct list* findprev(struct list**head,struct list*elem){
-    //returns a pointer to element pointing to a given element
-    struct list*prev;
-    if((prev=*head))
-        for(;(prev->next)!=elem;prev=prev->next);
-    return prev;
-}
-    
-struct list* smallest(struct list**head){
-    struct list*temp,*small;
-    if((temp=*head)){
-        small=temp;
-        for(;temp;temp=temp->next)
-            if((temp->val)<(small->val)) small=temp;
-        return small;
-    }
-    return temp;
-}
-
-int listLength(struct list**head)
+listPtr listCreate()
 {
-	if(head == NULL)
-		return -1;
-	struct list*temp;
-	int counter=0;
-	for(temp=*head;temp;temp=temp->next){
-		counter++;
-		if(temp->next==*head)break;
+	listPtr list = (listPtr)malloc(sizeof(struct _list));
+	list->first = NULL;
+	list->last = NULL;
+	list->len = 0;
+	return list;
+}
+
+//listPtr listCreate(data_type data)
+//{
+//	listPtr list = listCreate();
+//	listElemInsertEnd(list, data);
+//	return list;
+//}
+
+void listFree(listPtr list)
+{
+	if(list == NULL)
+		return;
+
+	if(list->first)
+	{
+		listElemPtr head, temp;
+		for(head = list->first; head;)
+		{
+			temp = head;
+			head = head->next;
+			free(temp->val);
+			free(temp);
+			if(head == list->first)
+				return;
+		}
 	}
-	return counter;
+	free(list);
 }
 
-//rearanging of elements
 
-void reverseList(struct list**head){
-    struct list*temp,*end,*preend;
-    if(*head){
-        for(end=*head;end->next;end=end->next); //where is the end
-        if((*head)->next){
-            for(preend=*head;preend->next->next;preend=preend->next);
-            end->next=preend;
-            for(;(*head)!=preend;){
-                for(temp=*head;(temp->next)!=preend;temp=temp->next);
-                preend->next=temp;
-                preend=temp;
-            }
-            (*head)->next=NULL;
-        }
-        *head=end;
-    }
+// creates new element of the list
+listElemPtr listElemCreate(data_type data)
+{
+	listElemPtr newelem=(listElemPtr)malloc(sizeof(struct _listElem));
+	newelem->val = data;
+	newelem->next = NULL;
+	newelem->prev = NULL;
+	return newelem;
 }
 
-void swap(struct list**head,struct list*elem1,struct list*elem2){
-    struct list/**temp,*/*temp1,*temp2,*prev1=NULL,*prev2=NULL;
-    if((*head)&&elem1&&elem2&&(elem1!=elem2)){
-        for(temp1=*head;(temp1!=elem1)&&(temp1!=elem2);temp1=temp1->next);
-        for(temp2=temp1->next;(temp2!=elem1)&&(temp2!=elem2);temp2=temp2->next);
-        if((*head)!=temp1) prev1=findprev(head,temp1); //until next is temp1
-        prev2=findprev(head,temp2); //until next is temp2
-        if(prev1) prev1->next=temp2; //swapping
-        else *head=temp2;
-        prev2=(prev2->next=temp1)->next;
-        temp1->next=temp2->next;
-        temp2->next=prev2;
-    }
+//inserts new element at the front
+void listElemInsertFront(listPtr list, data_type data)
+{
+	if(list == NULL)
+		return;
+
+	listElemPtr newElem = listElemCreate(data);
+
+	switch(list->len)
+	{
+	case 0:
+		list->last = newElem;
+		break;
+	case 1:
+	default:
+		newElem->next = list->first;
+		list->first->prev = newElem;
+		break;
+	}
+	list->len += 1;
+	// changing the beginning of the list
+	list->first = newElem;
 }
 
-void selectionSort(struct list**head){
-    //sorts the list in ascending order, using selection sort algorithm
-    struct list/**prevhead=NULL,*/*currhead,*min;
-    for(currhead=*head;currhead;currhead=currhead->next){
-        swap(head,currhead,(min=smallest(&currhead)));
-        /*prevhead=(currhead=min);*/ //setting new currhead (after swap)
-    }
+void listElemInsertBefore(listPtr list, size_t index, data_type data)
+{
+	if(list == NULL)
+		return;
+
+	if(list->len == 0 || index == 0)
+		listElemInsertFront(list, data);
+	else if(index >= list->len)
+		listElemInsertEnd(list, data);
+	else
+		listElemInsertAfter(list, index - 1, data);
+}
+
+// inserts new element after element with given index
+void listElemInsertAfter(listPtr list, size_t index, data_type data)
+{
+	if(list == NULL)
+		return;
+
+	if(list->len == 0)
+		listElemInsertFront(list, data);
+	else if(index >= list->len - 1)
+		listElemInsertEnd(list, data);
+	else
+	{
+		listElemPtr elem = listElemGet(list, index);
+		listElemPtr newElem = listElemCreate(data);
+		newElem->next = elem->next;
+		newElem->prev = elem;
+		elem->next = newElem;
+		newElem->next->prev = newElem;
+		list->len += 1;
+	}
+}
+
+void listElemInsertEnd(listPtr list, data_type data)
+{
+	if(list == NULL)
+		return;
+
+	listElemPtr newElem = listElemCreate(data);
+
+	switch(list->len)
+	{
+	case 0:
+		list->first = newElem;
+		break;
+	case 1:
+	default:
+		newElem->prev = list->last;
+		list->last->next = newElem;
+		break;
+	}
+	list->len += 1;
+	// changing the end of the list
+	list->last = newElem;
+}
+
+void listMerge(listPtr list1, listPtr list2)
+{
+	if(listLength(list2) == 0)
+	{
+		// nothing
+	}
+	else if(listLength(list1) == 0)
+	{
+		list1->first = list2->first;
+		list1->last = list2->last;
+		list1->len = list2->len;
+	}
+	else
+	{
+		list1->last->next = list2->first;
+		list2->first->prev = list1->last;
+		list1->len += list2->len;
+	}
+	if(list2 != NULL)
+		free(list2);
+}
+
+void listElemRemoveLast(listPtr list)
+{
+	if(listLength(list) == 0)
+		return;
+	listElemPtr temp = list->last;
+	if(listLength(list) == 1)
+	{
+		list->first = NULL;
+		list->last = NULL;
+		list->len = 0;
+	}
+	else
+	{
+		list->last = list->last->prev;
+		list->last->next = NULL;
+		list->len -= 1;
+	}
+	free(temp->val);
+	free(temp);
+}
+
+void listClear(listPtr list)
+{
+	if(list == NULL)
+		return;
+
+	if(list->first)
+	{
+		listElemPtr head, temp;
+		for(head = list->first; head;)
+		{
+			temp = head;
+			head = head->next;
+			free(temp->val); // because data_type is void*
+			free(temp);
+			if(head == list->first)
+				return;
+		}
+	}
+
+	list->first = NULL;
+	list->last = NULL;
+	list->len = 0;
+}
+
+listElemPtr listElemGetFirst(listPtr list)
+{
+	if(list == NULL)
+		return NULL;
+	return list->first;
+}
+
+listElemPtr listElemGet(listPtr list, size_t index)
+{
+	if(list == NULL || index < 0 || index >= list->len)
+		return NULL;
+	if(index == 0)
+		return list->first;
+	if(index == list->len - 1)
+		return list->last;
+
+	size_t counter = 1;
+	listElemPtr elem;
+	for(elem = list->first->next; elem; elem=elem->next)
+	{
+		if(counter == index)
+			break;
+		++counter;
+	}
+	return elem;
+}
+
+listElemPtr listElemGetLast(listPtr list)
+{
+	if(list == NULL)
+		return NULL;
+	return list->last;
+}
+
+size_t listLength(listPtr list)
+{
+	if(list == NULL)
+		return 0;
+	return list->len;
+}
+
+void listElemMove(listElemPtr elem, listPtr from, listPtr to)
+{
+#ifdef DEBUG_LISTS
+	printf("listElemMove(elem, from, to)\n");
+#endif
+	if(elem == NULL || from == NULL || to == NULL)
+		return;
+
+	if(elem == from->last)
+		from->last = elem->prev;
+	if(elem == from->first)
+		from->first = elem->next;
+	if(elem->prev)
+		elem->prev->next = elem->next;
+	if(elem->next)
+		elem->next->prev = elem->prev;
+
+	from->len -= 1;
+
+	if(from->len == 0)
+	{
+		from->first = NULL;
+		from->last = NULL;
+	}
+
+	if(to->len > 0)
+	{
+		to->last->next = elem;
+		elem->prev = to->last;
+		to->last = elem;
+	}
+	else
+	{
+		elem->prev = NULL;
+		to->first = elem;
+		to->last = elem;
+	}
+	elem->next = NULL;
+	to->len += 1;
 }
 
 //printing list on screen
 
-void printList(struct list**head){
-    //prints the list's contents
-    struct list*temp;
-    for(temp=*head;temp;){
-        printf(DATA_TYPE_FORMAT,temp->val);
-        if((temp=temp->next)&&(temp!=*head))printf(", ");
-        if(temp==*head) return;
-    }
+//prints the list's contents
+void listPrint(listPtr list, FILE* f)
+{
+	if(list == NULL || list->len < 1)
+		return;
+	listElemPtr temp;
+	for(temp=list->first;temp;)
+	{
+		fprintf(f, "%d", (int)temp->val); // DATA_TYPE_FORMAT
+		if((temp = temp->next) && (temp != list->first))
+			fprintf(f, ", ");
+		if(temp == list->first)
+			return;
+	}
 }
 
-void printLnList(struct list**head){
-    //prints the list's contents and newline character
-    printList(head);
-    printf("\n");
-}
+/*
+//void listConnect(struct list**elem1,struct list**elem2,data_type n){
+//    struct list*newelem;
+//    newelem=createElem(n);
+//    if(*elem1){
+//        (*elem1)->next=newelem;
+//        newelem->next=(*elem2);
+//    }
+//    else{
+//        *elem1=newelem;
+//        (*elem1)->next=(*elem2);
+//    }
+//}
 
-void printLen(struct list**head){
-    //prints the list's length
-    struct list*temp;
-    int counter=0;
-    for(temp=*head;temp;temp=temp->next){
-        counter++;
-        if(temp->next==*head)break;
-    }
-    if(temp)if(temp->next==*head) printf("circle with ");
-    printf("len=%i",counter);
-}
+//void insertEnd(struct list**head,data_type n){
+//    //adds new element at the end of the list
+//    struct list*newelem,*temp;
+//    if((temp=*head)){ //nonempty list
+//        newelem=createElem(n);
+//        for(;temp->next;) //until next is not null
+//            temp=temp->next; //go to the next elem.
+//        temp->next=newelem; //next of last becomes our new elem.
+//    }
+//    else insertFront(head,n); //list is empty
+//}
 
-void printLnLen(struct list**head){
-    //prints the list's length and newline character
-    printLen(head);
-    printf("\n");
-}
-void printListAndLen(struct list**head){
-    //prints the list's contents and its length
-    printList(head);
-    printf(", ");
-    printLen(head);
-}
+//void removeFirst(struct list**head,data_type n){
+//    //removes the first occurence of value n from the list
+//    struct list*temp=*head;
+//    if(temp){
+//        if((temp->val)==n) head=NULL; //one elem, equal to n
+//        else if(temp->next){ //more then one elem
+//            for(;temp->next;){
+//                if((temp->next->val)==n){ //next elem. value equal to n
+//                    struct list *removed=temp->next; //remember next elem
+//                    temp->next=temp->next->next; //change pointer
+//                    free(removed); //remove former next elem
+//                    //and move to end, or more than one occur. will be remov.
+//                    for(;temp->next;) temp=temp->next;
+//                }else temp=temp->next;
+//            }
+//        } //else: nothing to remove, only one elem. and it is diffrent than n
+//    } //else: nothing to remove, because the list has no elements
+//}
 
-void printLnListAndLen(struct list**head){
-    //prints the list's contents, its length and newline character
-    printListAndLen(head);
-    printf("\n");
-}
+//properties of lists
+
+//struct list* findlast(struct list**head){
+//    //finds last element of the list and returns a pointer to it
+//    struct list*last;
+//    if((last=*head))
+//        for(;last->next;last=last->next);
+//    return last;
+//}
+
+//struct list* findprev(struct list**head,struct list*elem){
+//    //returns a pointer to element pointing to a given element
+//    struct list*prev;
+//    if((prev=*head))
+//        for(;(prev->next)!=elem;prev=prev->next);
+//    return prev;
+//}
+
+//struct list* smallest(struct list**head){
+//    struct list*temp,*small;
+//    if((temp=*head)){
+//        small=temp;
+//        for(;temp;temp=temp->next)
+//            if((temp->val)<(small->val)) small=temp;
+//        return small;
+//    }
+//    return temp;
+//}
+
+//struct list* generateRandomList(int len,data_type min,data_type max){
+//    struct list*head=NULL,*temp;
+//    int i;
+//    if((len>0)&&(max>=min)){
+//        head=createElem(rand()%(max-min+1)+min);
+//        temp=head;
+//        for(i=1;i<len;i++){
+//            //newelem=;
+//            temp->next=createElem(rand()%(max-min+1)+min);
+//            temp=temp->next;
+//        }
+//    }
+//    return head;
+//}
+
+//rearanging of elements
+
+//void reverseList(struct list**head){
+//    struct list*temp,*end,*preend;
+//    if(*head){
+//        for(end=*head;end->next;end=end->next); //where is the end
+//        if((*head)->next){
+//            for(preend=*head;preend->next->next;preend=preend->next);
+//            end->next=preend;
+//            for(;(*head)!=preend;){
+//                for(temp=*head;(temp->next)!=preend;temp=temp->next);
+//                preend->next=temp;
+//                preend=temp;
+//            }
+//            (*head)->next=NULL;
+//        }
+//        *head=end;
+//    }
+//}
+
+//void swap(struct list**head,struct list*elem1,struct list*elem2){
+//    struct list*temp1,*temp2,*prev1=NULL,*prev2=NULL;
+//    if((*head)&&elem1&&elem2&&(elem1!=elem2)){
+//        for(temp1=*head;(temp1!=elem1)&&(temp1!=elem2);temp1=temp1->next);
+//        for(temp2=temp1->next;(temp2!=elem1)&&(temp2!=elem2);temp2=temp2->next);
+//        if((*head)!=temp1) prev1=findprev(head,temp1); //until next is temp1
+//        prev2=findprev(head,temp2); //until next is temp2
+//        if(prev1) prev1->next=temp2; //swapping
+//        else *head=temp2;
+//        prev2=(prev2->next=temp1)->next;
+//        temp1->next=temp2->next;
+//        temp2->next=prev2;
+//    }
+//}
+
+//void selectionSort(struct list**head){
+//    //sorts the list in ascending order, using selection sort algorithm
+//    struct list*currhead,*min;
+//    for(currhead=*head;currhead;currhead=currhead->next){
+//        swap(head,currhead,(min=smallest(&currhead)));
+//        //prevhead=(currhead=min); //setting new currhead (after swap)
+//    }
+//}
+
+//void printLnList(struct list**head){
+//    //prints the list's contents and newline character
+//    printList(head);
+//    printf("\n");
+//}
+
+//void printLen(struct list**head){
+//    //prints the list's length
+//    struct list*temp;
+//    int counter=0;
+//    for(temp=*head;temp;temp=temp->next){
+//        counter++;
+//        if(temp->next==*head)break;
+//    }
+//    if(temp)if(temp->next==*head) printf("circle with ");
+//    printf("len=%i",counter);
+//}
+
+//void printLnLen(struct list**head){
+//    //prints the list's length and newline character
+//    printLen(head);
+//    printf("\n");
+//}
+//void printListAndLen(struct list**head){
+//    //prints the list's contents and its length
+//    printList(head);
+//    printf(", ");
+//    printLen(head);
+//}
+
+//void printLnListAndLen(struct list**head){
+//    //prints the list's contents, its length and newline character
+//    printListAndLen(head);
+//    printf("\n");
+//}
+*/

@@ -23,45 +23,76 @@
 #include <time.h>
 
 // type of data, can be safely changed to any integral, numerical data type
-typedef int64_t data_type;
-#define DATA_TYPE_FORMAT "%lli"
+typedef void* data_type;
+#define DATA_TYPE_FORMAT "%d"
 
-struct list{ //one directional list
-    data_type val; //value
-    struct list *next; //next element
+// bidirectional list element
+struct _listElem
+{
+    data_type val; // value
+    struct _listElem* next; // next element
+	 struct _listElem* prev; // previous element
 };
+typedef struct _listElem* listElemPtr;
 
-//function that performs a test run
-void listFunctionsTest();
+struct _list
+{
+	struct _listElem* first;
+	struct _listElem* last;
+	size_t len;
+};
+typedef struct _list* listPtr;
+
+// functions that performs a test run
+void listTestAll();
+
+//creation or deletion of a whole list
+listPtr listCreate();
+//listPtr listCreate(data_type data);
+//listPtr listCreateRandom(size_t len, data_type min, data_type max);
+void listFree(listPtr list);
 
 //creation or deletion of elements
-struct list* createElem(data_type n);
-struct list* generateRandomList(int len,data_type min,data_type max);
-void insertFront(struct list**head,data_type n);
-void insertAfter(struct list**head,int place,data_type n);
-void listConnect(struct list**elem1,struct list**elem2,data_type n);
-void insertEnd(struct list**head,data_type n);
-void removeFirst(struct list**head,data_type n);
-void freeList(struct list**head);
+listElemPtr listElemCreate(data_type data);
+
+// adding elements to the list
+void listElemInsertFront(listPtr list, data_type data);
+void listElemInsertBefore(listPtr list, size_t index, data_type data);
+void listElemInsertAfter(listPtr list, size_t index, data_type data);
+void listElemInsertEnd(listPtr list, data_type data);
+void listMerge(listPtr list1, listPtr list2);
+
+// removing elements
+void listElemRemoveFirst(listPtr list);
+void listElemRemove(listPtr list, size_t index);
+void listElemRemoveLast(listPtr list);
+void listClear(listPtr list);
 
 //properties of lists
-struct list* findlast(struct list**head);
-struct list* findprev(struct list**head,struct list*elem);
-struct list* smallest(struct list**head);
+//void listConnect(struct list**elem1,struct list**elem2,data_type n);
+//struct list* findlast(struct list**head);
+//struct list* findprev(struct list**head,struct list*elem);
+//struct list* smallest(struct list**head);
 
-int listLength(struct list**head);
+listElemPtr listElemGetFirst(listPtr list);
+listElemPtr listElemGet(listPtr list, size_t index);
+listElemPtr listElemGetLast(listPtr list);
+size_t listLength(listPtr list);
 
 //rearanging of elements
-void reverseList(struct list**head);
-void swap(struct list**head,struct list*elem1,struct list*elem2);
-void selectionSort(struct list**head);
+void listElemMove(listElemPtr elem, listPtr from, listPtr to);
+//void reverseList(struct list**head);
+//void swap(struct list**head,struct list*elem1,struct list*elem2);
+//void selectionSort(struct list**head);
+
+void listPrint(listPtr list, FILE* f);
 
 //printing elements on screen
-void printList(struct list**head);
-void printLnList(struct list**head);
-void printLen(struct list**head);
-void printLnLen(struct list**head);
-void printListAndLen(struct list**head);
-void printLnListAndLen(struct list**head);
+//void printList(struct list**head);
+//void printLnList(struct list**head);
+//void printLen(struct list**head);
+//void printLnLen(struct list**head);
+//void printListAndLen(struct list**head);
+//void printLnListAndLen(struct list**head);
 
 #endif // MBDEV_LISTFUNCTIONS_H

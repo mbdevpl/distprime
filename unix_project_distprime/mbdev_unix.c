@@ -189,6 +189,12 @@ void handlerSigchldDefault(int sig)
 	}
 }
 
+unsigned int getGoodSeed()
+{
+	struct timeval time;
+	gettimeofday(&time, NULL);
+	return (time.tv_sec*1000 + time.tv_usec/1000)*3 + getpid()*11;
+}
 
 /*!
  * \brief Exits the process with EXIT_FAILURE and message.
@@ -245,23 +251,48 @@ void milisleepFor(int milisecs)
 }
 
 
-int64_t bulk_read(int fd, char* buf, size_t count)
+size_t bulk_read(int fd, char* buf, size_t count)
 {
 	int c;
 	size_t len=0;
 	do{
 		c=TEMP_FAILURE_RETRY(read(fd,buf,count));
+		//printf("\"%s\", count=%d\n", buf, c);
 		if(c<0) return c;
 		if(c==0) return len; //EOF
 		buf+=c;
 		len+=c;
 		count-=c;
 	}while(count>0);
-	return len ;
+	return len;
 }
 
+size_t readUntil(int fd, char* buf, size_t count, char marker)
+{
+	int c;
+	size_t len = 0;
+	do
+	{
+		c = TEMP_FAILURE_RETRY(read(fd,buf,count));
+		//printf("\"%s\", count=%d\n", buf, c);
+		if(c<0) return c;
+		if(c==0) return len; //EOF
+		len += c;
+		count -= c;
+		if(count > 0)
+		{
+			if(strchr(buf, marker) != NULL)
+				return len;
+			//if(strchr(buf, '\0') != NULL)
+			//	return len;
+		}
+		buf += c;
+	}
+	while(count > 0);
+	return len;
+}
 
-int64_t bulk_write(int fd, char* buf, size_t count)
+size_t bulk_write(int fd, char* buf, size_t count)
 {
 	int c;
 	size_t len=0;
