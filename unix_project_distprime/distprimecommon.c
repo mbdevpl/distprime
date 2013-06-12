@@ -54,7 +54,9 @@ size_t socketSend(const int socket, const struct sockaddr_in* address,
 
 	if(written == 0)
 	{
+#ifdef DEBUG_IO
 		printf(" * wanted to send data, but xml to string conversion failed\n");
+#endif
 		return 0;
 	}
 
@@ -66,10 +68,16 @@ size_t socketSend(const int socket, const struct sockaddr_in* address,
 	}
 
 	if(sentBytes < written)
+	{
+#ifdef DEBUG_IO
 		printf(" * wanted to send %u bytes but sent %u", written, sentBytes);
+#endif
+	}
 
+#ifdef DEBUG_IO
 	printf(" * sent %d bytes to %s:%d\n", sentBytes,
 		inet_ntoa(address->sin_addr), ntohs(address->sin_port));
+#endif
 
 	return sentBytes;
 }
@@ -95,8 +103,10 @@ size_t socketReceive(const int socket, struct sockaddr_in* senderAddress,
 			ERR("recvfrom");
 		}
 	}
+#ifdef DEBUG_IO
 	printf(" * received %d bytes from %s:%d\n", receivedBytes,
 		inet_ntoa(senderAddress->sin_addr), ntohs(senderAddress->sin_port));
+#endif
 	if(receivedBytes == 0)
 		return 0;
 #ifdef DEBUG
@@ -107,7 +117,9 @@ size_t socketReceive(const int socket, struct sockaddr_in* senderAddress,
 	*doc = stringToXml(buffer, bufferLen);
 	if(*doc == NULL)
 	{
+#ifdef DEBUG_IO
 		printf(" * wanted to receive data, but string to xml conversion failed\n");
+#endif
 		return 0;
 	}
 	return receivedBytes;

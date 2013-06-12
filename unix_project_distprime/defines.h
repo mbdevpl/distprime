@@ -9,9 +9,15 @@
 #include <libxml/xmlmemory.h>
 #include <libxml/parser.h>
 
+// prints contents of network and pipe messages
 //#define DEBUG
+// prints byte counts sent/received
+//#define DEBUG_IO
+// prints parsed xml message parts recevied from the network
 //#define DEBUG_NETWORK
+// prints from prime range related functions
 //#define DEBUG_RANGES
+// prings confirmed primes related functions
 //#define DEBUG_CONFIRMATION
 
 // buffers used for inner processing
@@ -35,7 +41,7 @@
 #define MSGPART_WORKERDATA 12
 #define MSGPART_SERVERDATA 13
 //#define MSGPART_PRIMES 14
-#define MSGPART_PING 14
+//#define MSGPART_PING 14
 
 #define STATUS_IDLE 1
 #define STATUS_GENERATING 2

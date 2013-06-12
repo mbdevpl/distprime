@@ -20,9 +20,16 @@ void freeWorkerData(workerDataPtr worker)
 {
 	worker->hash = 0;
 	worker->id = 0;
-	//size_t i;
-	//for(i = 0; i < worker->processes; ++i)
-	//	;//freeProcessData(worker->processesData[i]);
+	if(worker->processesData != NULL)
+	{
+		size_t i;
+		for(i = 0; i < worker->processes; ++i)
+		{
+			if(worker->processesData[i] == NULL)
+				continue;
+			freeProcessData(worker->processesData[i]);
+		}
+	}
 	free(worker);
 }
 

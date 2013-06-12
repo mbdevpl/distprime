@@ -6,6 +6,10 @@ serverDataPtr allocServerData()
 
 	memset(&server->address, 0, sizeof(struct sockaddr_in));
 	server->hash = 0;
+	server->primeFrom = 0;
+	server->primeTo = 0;
+	server->primeRange = 0;
+	server->primesCount = 0;
 	server->workersActive = 0;
 	server->workersActiveData = listCreate();
 	server->processesDone = 0;
@@ -29,7 +33,7 @@ void printServerData(serverDataPtr server)
 		ntohs(server->address.sin_port));
 	printf(" hash=%u", server->hash);
 	if(server->primeFrom > 0 || server->primeTo > 0)
-		printf("prmieRange=[%lld,%lld] |primeRange|=%lld",
+		printf(" prmieRange=[%lld,%lld] |primeRange|=%lld",
 			server->primeFrom, server->primeTo, server->primeRange);
 	if(server->workersActive > 0 || server->processesDone > 0)
 	{
@@ -80,4 +84,16 @@ serverDataPtr xmlNodeParseServerData(xmlNodePtr node)
 	}
 
 	return server;
+}
+
+workerDataPtr matchActiveWorker(serverDataPtr server, workerDataPtr match)
+{
+	listElemPtr elem;
+	for(elem = listElemGetFirst(server->workersActiveData); elem; elem = elem->next)
+	{
+		workerDataPtr active = (workerDataPtr)elem->val;
+		if(active->hash == match->hash && active->id == match->id)
+			return active;
+	}
+	return NULL;
 }

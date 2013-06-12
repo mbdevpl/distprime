@@ -91,21 +91,18 @@ void socketSendStatus(const int socket, workerDataPtr worker,
 	xmlDocPtr doc = xmlDocCreate();
 	xmlNodePtr msgNode = xmlNodeCreateMsg();
 	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
-
+	xmlNodePtr serverNode = xmlNodeCreateServerData(server);
 	xmlDocSetRootElement(doc, msgNode);
 	xmlAddChild(msgNode, workerNode);
-
+	xmlAddChild(msgNode, serverNode);
 	size_t i;
 	for(i = 0; i < worker->processes; ++i)
 	{
 		xmlNodePtr processNode = xmlNodeCreateProcessData(worker->processesData[i], false);
-		xmlNodeSetContent(processNode, XMLCHARS "");
 		xmlAddChild(msgNode, processNode);
 	}
-
 	size_t bytesSent = socketSend(socket, &server->address, doc);
 	xmlFreeDoc(doc);
-
 	if(bytesSent == 0)
 		fprintf(stderr, "ERROR: no status sent\n");
 }
@@ -339,7 +336,7 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 				keepAlive = false;
 				break;
 			case STATUS_GENERATING:
-				printf("P%d: Generating primes...\n", pid);
+				//printf("P%d: Generating primes...\n", pid);
 				keepAlive = true;
 				break;
 			case STATUS_CONFIRMING:
@@ -347,6 +344,7 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 				keepAlive = false;
 				break;
 			default:
+				keepAlive = false;
 				break;
 			}
 			continue;
@@ -368,7 +366,9 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 					ERR("read");
 				else if(bytesRead > 0)
 				{
+#ifdef DEBUG_IO
 					printf(" * read %u bytes from pipe\n", bytesRead);
+#endif
 #ifdef DEBUG
 					printf("--------\n%s\n--------\n", buffer);
 #endif
@@ -423,8 +423,10 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 							myData->id = worker->id;
 							myServerData->address = addressSender;
 							myServerData->hash = server->hash;
-							//printf("updated my id to %u\n", myData->id);
-							//printf("set server hash to %u\n", myServerData->hash);
+						}
+						else if(myData->id == worker->id)
+						{
+							// nothing
 						}
 						else
 							fprintf(stderr, "ERROR, received id but already have id\n");
@@ -534,6 +536,16 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 		}
 	}
 
+	// close all pipes
+	{
+		size_t i;
+		for(i = 0; i < myData->processes; ++i)
+		{
+			processDataPtr myProcess = myData->processesData[i];
+			closefifo(myProcess->pipeRead);
+			closefifo(myProcess->pipeWrite);
+		}
+	}
 	closeSocket(socket);
 	xmlCleanupParser();
 }
@@ -556,6 +568,11 @@ void invokePrimesGenerator(processDataPtr process)
 
 		//sleep(60);
 		//printf("exit!\n");
+
+		listFree(process->primes);
+		listFree(process->confirmed);
+		freeProcessData(process);
+
 		exitNormal();
 	}
 }
@@ -583,42 +600,47 @@ void generatePrimes(processDataPtr process)
 {
 	pid_t pid = getpid();
 	int64_t n = 0;
-	const int64_t nMax = (process->primeRange-1) / 15 + 1;
+	const int64_t nMax = (process->primeRange-1) / 10 + 1;
 	char out[BUFSIZE_MAX];
 	size_t outCount;
 
 	fprintf(stdout, "P%d: started, range=[%lld,%lld]\n",
 		pid, process->primeFrom, process->primeTo);
-	int64_t i;
+	int64_t i = process->primeFrom;
 	int64_t checked = 0;
-	for(i = process->primeFrom; i <= process->primeTo; ++i)
-	{
-		if(isPrime(i))
-			listElemInsertEndPrime(process->primes, i);
-		++checked;
-		++n;
-
-		if(n == nMax)
+	if(i <= process->primeTo)
+		while(true)
 		{
-			n = 0;
-			double percent = (100.0 * checked) / process->primeRange;
-			fprintf(stdout, "P%d: computing: %3.2f%% %lld/%lld\n",
-				pid, percent, checked, process->primeRange);
-		}
+			if(isPrime(i))
+				listElemInsertEndPrime(process->primes, i);
+			++checked;
+			++n;
 
-		if(listLength(process->primes) >= 500)
-		{
-			outCount = primesToString(process->primes, out, BUFSIZE_MAX);
-			out[outCount++] = '\n';
-			bulk_write(process->pipeWrite, out, outCount);
-			listClear(process->primes);
+			if(n == nMax)
+			{
+				n = 0;
+				double percent = (100.0 * checked) / process->primeRange;
+				fprintf(stdout, "P%d: computing: %3.2f%% %lld/%lld\n",
+					pid, percent, checked, process->primeRange);
+			}
+
+			if(listLength(process->primes) >= 50)
+			{
+				outCount = primesToString(process->primes, out, BUFSIZE_MAX);
+				out[outCount++] = '\n';
+				bulk_write(process->pipeWrite, out, outCount);
+				listClear(process->primes);
+			}
+			if(i == process->primeTo)
+				break;
+			++i;
 		}
-	}
 	fprintf(stdout, "P%d: done\n", pid);
 	listElemInsertEndPrime(process->primes, 0);
 
 	outCount = primesToString(process->primes, out, BUFSIZE_MAX);
 	out[outCount++] = '\n';
 	bulk_write(process->pipeWrite, out, outCount);
+	listClear(process->primes);
 }
 

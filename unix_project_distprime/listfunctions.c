@@ -97,7 +97,6 @@ void listFree(listPtr list)
 	free(list);
 }
 
-
 // creates new element of the list
 listElemPtr listElemCreate(data_type data)
 {
@@ -106,6 +105,12 @@ listElemPtr listElemCreate(data_type data)
 	newelem->next = NULL;
 	newelem->prev = NULL;
 	return newelem;
+}
+
+void listElemFree(listElemPtr elem)
+{
+	free(elem->val);
+	free(elem);
 }
 
 //inserts new element at the front
@@ -233,6 +238,29 @@ void listElemRemoveLast(listPtr list)
 	free(temp);
 }
 
+void listElemDetach(listPtr list, listElemPtr elem)
+{
+	if(listLength(list) == 0 || elem == NULL)
+		return;
+
+	if(elem == list->last)
+		list->last = elem->prev;
+	if(elem == list->first)
+		list->first = elem->next;
+	if(elem->prev)
+		elem->prev->next = elem->next;
+	if(elem->next)
+		elem->next->prev = elem->prev;
+
+	list->len -= 1;
+
+//	if(list->len == 0)
+//	{
+//		list->first = NULL;
+//		list->last = NULL;
+//	}
+}
+
 void listClear(listPtr list)
 {
 	if(list == NULL)
@@ -306,22 +334,7 @@ void listElemMove(listElemPtr elem, listPtr from, listPtr to)
 	if(elem == NULL || from == NULL || to == NULL)
 		return;
 
-	if(elem == from->last)
-		from->last = elem->prev;
-	if(elem == from->first)
-		from->first = elem->next;
-	if(elem->prev)
-		elem->prev->next = elem->next;
-	if(elem->next)
-		elem->next->prev = elem->prev;
-
-	from->len -= 1;
-
-	if(from->len == 0)
-	{
-		from->first = NULL;
-		from->last = NULL;
-	}
+	listElemDetach(from, elem);
 
 	if(to->len > 0)
 	{

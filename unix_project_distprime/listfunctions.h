@@ -54,6 +54,7 @@ void listFree(listPtr list);
 
 //creation or deletion of elements
 listElemPtr listElemCreate(data_type data);
+void listElemFree(listElemPtr elem);
 
 // adding elements to the list
 void listElemInsertFront(listPtr list, data_type data);
@@ -66,6 +67,7 @@ void listMerge(listPtr list1, listPtr list2);
 void listElemRemoveFirst(listPtr list);
 void listElemRemove(listPtr list, size_t index);
 void listElemRemoveLast(listPtr list);
+void listElemDetach(listPtr list, listElemPtr elem);
 void listClear(listPtr list);
 
 //properties of lists

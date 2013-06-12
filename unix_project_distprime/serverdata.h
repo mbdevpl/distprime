@@ -13,8 +13,9 @@ struct _serverData
 	int64_t primeTo;
 	// primeTo-primeFrom+1
 	int64_t primeRange;
-	// stores int64_t*
-	listPtr primes;
+	//listPtr primes; // stores int64_t*
+	// global count of confirmed primes
+	int64_t primesCount;
 	size_t workersActive;
 	// stores workerDataPtr
 	listPtr workersActiveData;
@@ -35,5 +36,7 @@ void printServerData(serverDataPtr server);
 xmlNodePtr xmlNodeCreateServerData(serverDataPtr server);
 
 serverDataPtr xmlNodeParseServerData(xmlNodePtr node);
+
+workerDataPtr matchActiveWorker(serverDataPtr server, workerDataPtr match);
 
 #endif // SERVERDATA_H

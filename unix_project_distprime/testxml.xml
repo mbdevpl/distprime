@@ -1,22 +1,38 @@
 <!-- this file contains example messages that are sent
 	between server and workers -->
 
-<!-- sent from worker -->
+<!-- a handshake, sent from worker -->
 <distprimemsg>
-  <workerdata port="1239" processes="4" />
+  <worker processes="1" hash="236926" id="0" status="1" statusSince="2013/04/20 12:59.00" />
 </distprimemsg>
 
-<!-- sent from server -->
+<!-- response to a handshake, sent from server -->
 <distprimemsg>
-  <primerange from="0" to="1000000" />
+  <server hash="9708909"/>
+  <worker processes="1" hash="236926" id="1" status="2" statusSince="2013/04/20 12:59.02" />
+  <process primeFrom="2" primeTo="18" status="4" />
 </distprimemsg>
 
-<!-- sent from worker -->
+<!-- partial results, sent from worker -->
 <distprimemsg>
-  <prime count="1">3</prime>
+  <process primeFrom="2" primeTo="18" status="4" count="2">2,3</process>
 </distprimemsg>
 
-<!-- sent from worker -->
+<!-- confirmation of the partial results, sent from server -->
 <distprimemsg>
-  <prime count="5">5,7,11,13,17</prime>
+  <server hash="9708909"/>
+  <process primeFrom="2" primeTo="18" status="4" primesCount="2">2,3</process>
 </distprimemsg>
+
+<!-- final batch of the results, sent from worker -->
+<distprimemsg>
+  <process primeFrom="2" primeTo="18" status="5" primesCount="5">5,7,11,13,17</process>
+</distprimemsg>
+
+<!-- confirmation of the partial results, sent from server -->
+<distprimemsg>
+  <server hash="9708909"/>
+  <process primeFrom="2" primeTo="18" status="5" primesCount="5">5,7,11,13,17</process>
+</distprimemsg>
+
+<!-- <process primeFrom="9223372036854775000" primeTo="9223372036854775807" status="4" /> -->

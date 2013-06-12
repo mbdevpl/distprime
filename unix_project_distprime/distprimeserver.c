@@ -2,7 +2,7 @@
 #include "distprimecommon.h"
 #include "serverdata.h"
 
-#define FIRSTLIMIT ((int64_t)4000000LL)
+#define FIRSTLIMIT ((int64_t)15000000LL)
 
 #define SERVER_PORT ((in_port_t)8765)
 
@@ -26,6 +26,8 @@ int64_t findRangeEnd(serverDataPtr server, listPtr excludedRanges,
 		size_t reserveMore, const int64_t rangeStart);
 bool setPrimeRange(serverDataPtr server, listPtr excludedRanges,
 		size_t reserveMore, processDataPtr process);
+void writeHeader(const char* filename);
+void writeFooter(const char* filename);
 void savePrimes(listPtr list, const char* filename);
 
 void usage()
@@ -51,6 +53,20 @@ void socketSendConfirmation(const int socket, serverDataPtr server,
 	xmlAddChild(msgNode, serverNode);
 	//xmlAddChild(msgNode, workerNode);
 	xmlAddChild(msgNode, processNode);
+	size_t bytesSent = socketSend(socket, &worker->address, doc);
+	xmlFreeDoc(doc);
+	if(bytesSent == 0)
+		fprintf(stderr, "ERROR: no confirmation sent\n");
+}
+
+void socketSendStatusRequest(const int socket, serverDataPtr server, workerDataPtr worker)
+{
+	xmlDocPtr doc = xmlDocCreate();
+	xmlNodePtr msgNode = xmlNodeCreateMsg();
+	xmlNodePtr serverNode = xmlNodeCreateServerData(server);
+	xmlDocSetRootElement(doc, msgNode);
+	xmlAddChild(msgNode, serverNode);
+
 	size_t bytesSent = socketSend(socket, &worker->address, doc);
 	xmlFreeDoc(doc);
 	if(bytesSent == 0)
@@ -92,6 +108,59 @@ void movePrimeRangesToWorker(listPtr ranges, workerDataPtr worker)
 	}
 }
 
+bool socketRespondToHandshake(const int socket, serverDataPtr server,
+		workerDataPtr worker, unsigned int workerIdSentLast)
+{
+	bool result = false;
+	listPtr ranges = createNewPrimeRanges(server, worker);
+	if(listLength(ranges) == worker->processes)
+	{
+		// received broadcast
+		workerDataPtr newWorker = allocWorkerData();
+		newWorker->address = worker->address;
+		newWorker->hash = worker->hash;
+		++workerIdSentLast;
+		newWorker->id = workerIdSentLast;
+		newWorker->processes = worker->processes;
+		newWorker->processesData =
+			(processDataPtr*)malloc(newWorker->processes * sizeof(processDataPtr));
+		newWorker->status = STATUS_GENERATING;
+		time(&newWorker->now);
+		newWorker->statusSince = newWorker->now;
+		movePrimeRangesToWorker(ranges, newWorker);
+		server->workersActive += 1;
+		listElemInsertEnd(server->workersActiveData, (data_type)newWorker);
+		socketSendPrimeRanges(socket, server, newWorker, ranges);
+		result = true;
+	}
+	else if(listLength(ranges) == 0)
+	{
+		// received broadcast, but all prime ranges are allocated
+		result = true;
+	}
+	else
+		fprintf(stderr, "ERROR: wrong number of prime ranges to send\n");
+	listFree(ranges);
+	return result;
+}
+
+void removeConfirmedPrimes(listPtr list, listPtr confirmed)
+{
+	listElemPtr e1;
+	for(e1 = listElemGetFirst(list); e1; e1 = e1->next)
+	{
+		listElemPtr e2;
+		for(e2 = listElemGetFirst(confirmed); e2; e2 = e2->next)
+		{
+			if(valueToPrime(e1->val) != valueToPrime(e2->val))
+				continue;
+			listElemDetach(list, e1);
+			listElemFree(e1);
+			break;
+		}
+	}
+}
+
 double calcProgress(serverDataPtr server)
 {
 	int64_t doneRange = 0;
@@ -117,13 +186,17 @@ bool checkIfDone(serverDataPtr server)
 		next = findRangeEndStartedByInList(current, server->processesDoneData);
 		if(next > 0)
 		{
+			if(next == server->primeTo)
+				return true;
+			//if(next == INT64_MAX)
+			//	return true;
 			current = next + 1;
 			continue;
 		}
 	}
 	while(next > 0);
-	if(current > server->primeTo)
-		return true;
+	//if(current > server->primeTo)
+	//	return true;
 	return false;
 }
 
@@ -204,162 +277,186 @@ void serverLoop(serverDataPtr myData)
 	//if((descriptor = TEMP_FAILURE_RETRY(accept(socket, NULL, NULL))) < 0)
 	//	ERR("accept");
 
+	time_t printed = 0;
+	time_t now;
+	writeHeader(myData->outputPath);
 	while(true)
 	{
+		time(&now);
+		//send status requests to clients that checked-in long ago
+		{
+			listElemPtr e1;
+			for(e1 = listElemGetFirst(myData->workersActiveData); e1;)
+			{
+				workerDataPtr active = (workerDataPtr)e1->val;
+				time_t diff = now - active->now;
+				// wait 3 seconds before checking up on the worker,
+				// and another 3 for response
+				//printf("%ld-%ld=%ld\n", now, active->now, diff);
+				if(diff >= 3)
+				{
+					if(active->now == active->statusSince)
+					{
+						// last communication was from the client, so it's time to send ping
+						active->now = now;
+						socketSendStatusRequest(socket, myData, active);
+					}
+					else
+					{
+						// being deaf has consequences
+						listElemPtr temp = e1;
+						e1 = e1->next;
+						listElemDetach(myData->workersActiveData, temp);
+						myData->workersActive -= 1;
+						freeWorkerData(active);
+						free(temp);
+						continue;
+					}
+				}
+				e1 = e1->next;
+			}
+		}
+
 		// receive xml from the socket
 		xmlDocPtr doc;
-		if(socketReceive(socket, &addrSender, &doc) == 0)
-			continue;
-
-		// parse xml into distprime objects
-		serverDataPtr server;
-		workerDataPtr worker;
-		listPtr processesList;
-		if(processXml(doc, &server, &worker, &processesList) < 0)
-			continue;
-
-		bool msgHandled = false;
-		if(server == NULL)
+		if(socketReceive(socket, &addrSender, &doc) > 0)
 		{
-			if(worker != NULL)
+			// parse xml into distprime objects
+			serverDataPtr server;
+			workerDataPtr worker;
+			listPtr processesList;
+			if(processXml(doc, &server, &worker, &processesList) < 0)
+				continue;
+
+			bool msgHandled = false;
+			if(server == NULL)
 			{
-				if(worker->id == 0)
+				if(worker != NULL)
 				{
-					if(worker->processes > 0)
+					if(worker->id == 0)
 					{
-						if(listLength(processesList) == 0)
+						if(worker->processes > 0)
 						{
-							listPtr ranges = createNewPrimeRanges(myData, worker);
-							if(listLength(ranges) == worker->processes)
+							if(listLength(processesList) == 0)
 							{
-								// received broadcast
-								workerDataPtr newWorker = allocWorkerData();
-
-								newWorker->address = addrSender;
-								newWorker->hash = worker->hash;
-								++workerIdSentLast;
-								newWorker->id = workerIdSentLast;
-								newWorker->processes = worker->processes;
-								newWorker->processesData = (processDataPtr*)malloc(newWorker->processes * sizeof(processDataPtr));
-								newWorker->status = STATUS_GENERATING;
-								time(&newWorker->now);
-								newWorker->statusSince = newWorker->now;
-								movePrimeRangesToWorker(ranges, newWorker);
-								myData->workersActive += 1;
-								listElemInsertEnd(myData->workersActiveData, (data_type)newWorker);
-
-								socketSendPrimeRanges(socket, myData, newWorker, ranges);
-								msgHandled = true;
+								worker->address = addrSender;
+								msgHandled = socketRespondToHandshake(socket, myData,
+										worker, workerIdSentLast);
 							}
-							else if(listLength(ranges) == 0)
+							else
+								fprintf(stderr, "ERROR: unregistered worker sent too much information\n");
+						}
+						else
+							fprintf(stderr, "ERROR: worker does not want to work\n");
+					}
+					else
+					{
+						if(listLength(processesList) > 0)
+						{
+							// received a list of primes
+							bool recognizedWorker = false;
+							bool sentConfirmation = false;
+							listElemPtr elem;
+							for(elem = listElemGetFirst(myData->workersActiveData); elem; elem = elem->next)
 							{
-								// received broadcast, but all prime ranges are allocated
+								workerDataPtr active = (workerDataPtr)elem->val;
+								if(active->hash == worker->hash)
+								{
+									listElemPtr e;
+									for(e = listElemGetFirst(processesList); e; e = e->next)
+									{
+										processDataPtr proc = (processDataPtr)e->val;
+										if(sentConfirmation)
+										{
+											freeProcessData(proc);
+											continue;
+										}
+										size_t i;
+										for(i = 0; i < active->processes; ++i)
+										{
+											processDataPtr activeProcess = active->processesData[i];
+											if(activeProcess == NULL)
+											{
+												// TODO: find this process in myData->processesDoneData
+												// check if all new primes are in confirmed
+												// send confirmation
+												// if confirmation sent, break loop:
+												//if(sentConfirmation)
+												//	break;
+												continue;
+											}
+											if(activeProcess->primeFrom == proc->primeFrom)
+											{
+												// received a list of primes from a worker
+												activeProcess->status = proc->status;
+												if(activeProcess->primes == NULL)
+													activeProcess->primes = listCreate();
+												listMerge(activeProcess->primes, proc->primes);
+												proc->primes = NULL;
+												//printf("TESTU\n");
+												//listElemPtr e2;
+												//for(e2 = listElemGetFirst(proc->primes); e2; e2 = e2->next)
+												//	listElemInsertEnd(myData->primes, e2->val);
+												socketSendConfirmation(socket, myData, active, activeProcess);
+
+												if(activeProcess->confirmed == NULL)
+													activeProcess->confirmed = listCreate();
+												removeConfirmedPrimes(activeProcess->primes, activeProcess->confirmed);
+												// save all primes to text file, and increase counter
+												{
+													size_t len = listLength(activeProcess->primes);
+													if(len > 0)
+													{
+														savePrimes(activeProcess->primes, myData->outputPath);
+														myData->primesCount += len;
+													}
+												}
+												listMerge(activeProcess->confirmed, activeProcess->primes);
+												activeProcess->primes = listCreate();
+
+												sentConfirmation = true;
+												if(activeProcess->status == PROCSTATUS_UNCONFIRMED
+														&& listLength(activeProcess->primes) == 0)
+												{
+													activeProcess->status = PROCSTATUS_CONFIRMED;
+													active->processesData[i] = NULL;
+													time(&activeProcess->finished);
+													myData->processesDone += 1;
+													listElemInsertEnd(myData->processesDoneData, (data_type)activeProcess);
+												}
+												break;
+											}
+										}
+										freeProcessData(proc);
+									}
+									recognizedWorker = true;
+									break;
+								}
+							}
+							if(recognizedWorker && sentConfirmation)
+							{
 								msgHandled = true;
 							}
 							else
-								fprintf(stderr, "ERROR: wrong number of prime ranges to send\n");
-							listFree(ranges);
-						}
-						else
-							fprintf(stderr, "ERROR: unregistered worker sent too much information\n");
-					}
-					else
-						fprintf(stderr, "ERROR: worker does not want to work\n");
-				}
-				else
-				{
-					if(listLength(processesList) > 0)
-					{
-						// received a list of primes
-						bool recognizedWorker = false;
-						bool sentConfirmation = false;
-						listElemPtr elem;
-						for(elem = listElemGetFirst(myData->workersActiveData); elem; elem = elem->next)
-						{
-							workerDataPtr active = (workerDataPtr)elem->val;
-							if(active->hash == worker->hash)
 							{
-								listElemPtr e;
-								for(e = listElemGetFirst(processesList); e; e = e->next)
-								{
-									processDataPtr proc = (processDataPtr)e->val;
-									if(sentConfirmation)
-									{
-										freeProcessData(proc);
-										continue;
-									}
-									size_t i;
-									for(i = 0; i < active->processes; ++i)
-									{
-										processDataPtr activeProcess = active->processesData[i];
-										if(activeProcess == NULL)
-											continue;
-										if(activeProcess->primeFrom == proc->primeFrom)
-										{
-											activeProcess->status = proc->status;
-											if(activeProcess->primes == NULL)
-												activeProcess->primes = listCreate();
-											listMerge(activeProcess->primes, proc->primes);
-											proc->primes = NULL;
-											//printf("TESTU\n");
-											//listElemPtr e2;
-											//for(e2 = listElemGetFirst(proc->primes); e2; e2 = e2->next)
-											//	listElemInsertEnd(myData->primes, e2->val);
-											socketSendConfirmation(socket, myData, active, activeProcess);
-
-											if(activeProcess->confirmed == NULL)
-												activeProcess->confirmed = listCreate();
-											listMerge(activeProcess->confirmed, activeProcess->primes);
-											activeProcess->primes = listCreate();
-
-											sentConfirmation = true;
-											if(activeProcess->status == PROCSTATUS_UNCONFIRMED
-													&& listLength(activeProcess->primes) == 0)
-											{
-												activeProcess->status = PROCSTATUS_CONFIRMED;
-												active->processesData[i] = NULL;
-												time(&activeProcess->finished);
-												myData->processesDone += 1;
-												listElemInsertEnd(myData->processesDoneData, (data_type)activeProcess);
-											}
-											break;
-										}
-									}
-									freeProcessData(proc);
-								}
-								recognizedWorker = true;
-								break;
+								if(!recognizedWorker)
+									fprintf(stderr, "ERROR: did not recognize worker\n");
+								if(!sentConfirmation)
+									fprintf(stderr, "ERROR: did not send any confirmation\n");
 							}
 						}
-						if(recognizedWorker && sentConfirmation)
-						{
-							//savePrimes(myData->primes, myData->outputPath);
-							//listClear(myData->primes);
-							msgHandled = true;
-						}
 						else
 						{
-							if(!recognizedWorker)
-								fprintf(stderr, "ERROR: did not recognize worker\n");
-							if(!sentConfirmation)
-								fprintf(stderr, "ERROR: did not send any confirmation\n");
-						}
-					}
-					else
-					{
-						bool foundWorker = false;
-						listElemPtr e1;
-						for(e1 = listElemGetFirst(myData->workersActiveData); e1; e1 = e1->next)
-						{
-							workerDataPtr w1 = (workerDataPtr)e1->val;
-							if(w1->hash == worker->hash && w1->id == worker->id)
+							bool foundWorker = false;
+							workerDataPtr active = matchActiveWorker(myData, worker);
+							if(active != NULL)
 							{
 								foundWorker = true;
 								bool workerReady = true;
 								size_t i;
-								for(i = 0; i < w1->processes; ++i)
+								for(i = 0; i < active->processes; ++i)
 								{
-									if(w1->processesData[i] != NULL)
+									if(active->processesData[i] != NULL)
 									{
 										workerReady = false;
 										break;
@@ -368,25 +465,16 @@ void serverLoop(serverDataPtr myData)
 								if(workerReady)
 								{
 									// received subsequent request
-									listPtr ranges = createNewPrimeRanges(myData, w1);
-									if(listLength(ranges) == w1->processes)
+									listPtr ranges = createNewPrimeRanges(myData, active);
+									if(listLength(ranges) == active->processes)
 									{
-										// received broadcast
-										//workerDataPtr newWorker = allocWorkerData();
-										//newWorker->address = addrSender;
-										//newWorker->hash = worker->hash;
-										//++workerIdSentLast;
-										//newWorker->id = workerIdSentLast;
-										//newWorker->processes = worker->processes;
-										//newWorker->processesData = (processDataPtr*)malloc(newWorker->processes * sizeof(processDataPtr));
-										w1->status = STATUS_GENERATING;
-										time(&w1->now);
-										w1->statusSince = w1->now;
-										movePrimeRangesToWorker(ranges, w1);
-										//myData->workersActive += 1;
-										//listElemInsertEnd(myData->workersActiveData, (data_type)newWorker);
+										// received prime range request
+										active->status = STATUS_GENERATING;
+										time(&active->now);
+										active->statusSince = active->now;
+										movePrimeRangesToWorker(ranges, active);
 
-										socketSendPrimeRanges(socket, myData, w1, ranges);
+										socketSendPrimeRanges(socket, myData, active, ranges);
 										msgHandled = true;
 									}
 									else if(listLength(ranges) == 0)
@@ -401,41 +489,71 @@ void serverLoop(serverDataPtr myData)
 								else
 									fprintf(stderr, "ERROR: worker not ready\n");
 							}
-							if(foundWorker)
-								break;
+							//listElemPtr e1;
+							//for(e1 = listElemGetFirst(myData->workersActiveData); e1; e1 = e1->next)
+							//{
+							//	workerDataPtr w1 = (workerDataPtr)e1->val;
+							//	if(w1->hash == worker->hash && w1->id == worker->id)
+							//	{
+							//		foundWorker = true;
+							//	}
+							//	if(foundWorker)
+							//		break;
+							//}
+							if(!foundWorker)
+								fprintf(stderr, "ERROR: registered worker not found\n");
+							//if(!workerReady)
+							//	if(!foundWorker)
 						}
-						if(!foundWorker)
-							fprintf(stderr, "ERROR: registered worker not found\n");
-						//if(!workerReady)
-						//	if(!foundWorker)
 					}
+					freeWorkerData(worker);
+					worker = NULL;
 				}
+				else
+					fprintf(stderr, "ERROR: received message without worker data\n");
+			}
+			else
+			{
+				bool recognizedWorker = false;
+				workerDataPtr active = matchActiveWorker(myData, worker);
+				if(active != NULL)
+				{
+					recognizedWorker = true;
+					active->status = worker->status;
+					time(&active->now);
+					active->statusSince = active->now;
+					msgHandled = true;
+				}
+				if(!recognizedWorker)
+					fprintf(stderr, "ERROR: received status message from unknown worker\n");
+			}
+
+			if(worker != NULL)
+			{
 				freeWorkerData(worker);
 				worker = NULL;
 			}
-			else
-				fprintf(stderr, "ERROR: received message without worker data\n");
-		}
-		else
-		{
-			fprintf(stderr, "INFO: discarded message with server data\n");
-			freeServerData(server);
-			server = NULL;
-		}
-		if(worker != NULL)
-		{
-			freeWorkerData(worker);
-			worker = NULL;
+
+			if(server != NULL)
+			{
+				freeServerData(server);
+				server = NULL;
+			}
+
+			if(!msgHandled)
+				fprintf(stderr, "ERROR: message was not handled\n");
 		}
 
 		if(doc != NULL)
 			xmlFreeDoc(doc);
 
-		if(!msgHandled)
-			fprintf(stderr, "ERROR: message was not handled\n");
-
-		printf("progress: %3.2f%% active workers: %3u primes discovered: %8u\n",
-			calcProgress(myData), myData->workersActive, listLength(myData->primes));
+		if(now - printed > 5)
+		{
+			// print progress information every 5 seconds
+			printf("progress: %3.2f%% active workers: %3u primes discovered: %8lld\n",
+				calcProgress(myData), myData->workersActive, myData->primesCount);
+			time(&printed);
+		}
 
 		if(checkIfDone(myData))
 		{
@@ -443,6 +561,7 @@ void serverLoop(serverDataPtr myData)
 			break;
 		}
 	}
+	writeFooter(myData->outputPath);
 
 	closeSocket(socket);
 	xmlCleanupParser();
@@ -480,7 +599,7 @@ int64_t findRangeEndStartedByInList(const int64_t value,
 {
 #ifdef DEBUG_RANGES
 	printf("findRangeEndStartedByInList(value, processes)\n");
-	printf("  value=%llu\n", value);
+	printf("  value=%lld\n", value);
 	printf("  |processes|=%u\n", listLength(processes));
 #endif
 	listElemPtr elem;
@@ -500,7 +619,7 @@ int64_t findRangeEndStartedBy(const int64_t value,
 {
 #ifdef DEBUG_RANGES
 	printf("findRangeEndStartedBy(value, processes, processesCount)\n");
-	printf("  value=%llu\n", value);
+	printf("  value=%lld\n", value);
 	printf("  processes=");
 	size_t ii;
 	for(ii = 0; ii < processesCount; ++ii)
@@ -526,7 +645,7 @@ int64_t findRangeStartPrecededByInList(const int64_t value,
 {
 #ifdef DEBUG_RANGES
 	printf("findRangeStartPrecededByInList(value, processes)\n");
-	printf("  value=%llu\n", value);
+	printf("  value=%lld\n", value);
 	printf("  |processes|=%u\n", listLength(processes));
 #endif
 	int64_t minimum = 0;
@@ -541,7 +660,7 @@ int64_t findRangeStartPrecededByInList(const int64_t value,
 	}
 #ifdef DEBUG_RANGES
 	printf("findRangeStartPrecededByInList(value, processes) returns:\n");
-	printf("  minimum=%llu\n", minimum);
+	printf("  minimum=%lld\n", minimum);
 #endif
 	return minimum;
 }
@@ -551,7 +670,7 @@ int64_t findRangeStartPrecededBy(const int64_t value,
 {
 #ifdef DEBUG_RANGES
 	printf("findRangeStartPrecededBy(value, processes, processesCount)\n");
-	printf("  value=%llu\n", value);
+	printf("  value=%lld\n", value);
 	printf("  processes=");
 	size_t ii;
 	for(ii = 0; ii < processesCount; ++ii)
@@ -571,7 +690,7 @@ int64_t findRangeStartPrecededBy(const int64_t value,
 	}
 #ifdef DEBUG_RANGES
 	printf("findRangeStartPrecededBy(value, processes, processesCount) returns:\n");
-	printf("  minimum=%llu\n", minimum);
+	printf("  minimum=%lld\n", minimum);
 #endif
 	return minimum;
 }
@@ -592,7 +711,11 @@ int64_t findRangeStart(serverDataPtr server, listPtr excludedRanges)
 		{
 			next = findRangeEndStartedByInList(current, excludedRanges);
 			if(next > 0)
+			{
+				if(next == INT64_MAX)
+					return 0;
 				current = next + 1;
+			}
 		}
 		while(next > 0);
 		return current;
@@ -603,9 +726,17 @@ int64_t findRangeStart(serverDataPtr server, listPtr excludedRanges)
 
 		do
 		{
+#ifdef DEBUG_RANGES
+			printf("findRangeStart(server) status:\n");
+			//printf("  next=%lld", next);
+			printf("  current=%lld\n", current);
+			//printServerData(server);
+#endif
 			next = findRangeEndStartedByInList(current, server->processesDoneData);
 			if(next > 0)
 			{
+				if(next == INT64_MAX)
+					return 0;
 				current = next + 1;
 				continue;
 			}
@@ -620,6 +751,8 @@ int64_t findRangeStart(serverDataPtr server, listPtr excludedRanges)
 			}
 			if(next > 0)
 			{
+				if(next == INT64_MAX)
+					return 0;
 				current = next + 1;
 				continue;
 			}
@@ -627,15 +760,11 @@ int64_t findRangeStart(serverDataPtr server, listPtr excludedRanges)
 			next = findRangeEndStartedByInList(current, excludedRanges);
 			if(next > 0)
 			{
+				if(next == INT64_MAX)
+					return 0;
 				current = next + 1;
 				continue;
 			}
-#ifdef DEBUG_RANGES
-	printf("findRangeStart(server) status:\n");
-	printf("  next=%lld", next);
-	printf(" current=%lld\n", current);
-	printServerData(server);
-#endif
 		}
 		while(next > 0);
 
@@ -651,8 +780,8 @@ int64_t findRangeEndLimited(serverDataPtr server, listPtr excludedRanges,
 {
 #ifdef DEBUG_RANGES
 	printf("findRangeEndLimited(rangeStart, rangeLimit)\n");
-	printf("  rangeStart=%llu\n", rangeStart);
-	printf("  rangeLimit=%llu\n", rangeLimit);
+	printf("  rangeStart=%lld\n", rangeStart);
+	printf("  rangeLimit=%lld\n", rangeLimit);
 #endif
 	if(rangeStart < 1 || rangeStart > rangeLimit)
 	{
@@ -681,10 +810,16 @@ int64_t findRangeEndLimited(serverDataPtr server, listPtr excludedRanges,
 
 	// if number is extremely large, range consists of only one number
 	// when limit is calculated for 10mln, it happens
-	// for 444444416228682746, which cannot be stored in 64bit signed var
+	// for 444444416228682746, which can still be stored in 64bit signed var
 	const double sqrtOfStart = sqrt((double)rangeStart);
 	if(sqrtOfStart >= limit)
+	{
+#ifdef DEBUG_RANGES
+		printf("findRangeEndLimited(rangeStart, rangeLimit) returns:\n");
+		printf("  rangeStart=%lld (sqrt(rangeStart) > limit)\n", rangeStart);
+#endif
 		return rangeStart;
+	}
 
 	double a = 1.0 / (2.0*sqrtOfStart);
 	double b = sqrtOfStart;
@@ -697,11 +832,14 @@ int64_t findRangeEndLimited(serverDataPtr server, listPtr excludedRanges,
 
 	//double fx_min = x*x*a + x+b + c;
 
-	//printf("sqrtOfStart=%f\n", sqrtOfStart);
-	//printf("a=%f\n", a);
-	//printf("b=%f\n", b);
-	//printf("c=%f\n", c);
-	//printf("delta=%f\n", delta);
+#ifdef DEBUG_RANGES
+	printf("findRangeEndLimited(rangeStart, rangeLimit) status:\n");
+	printf("  sqrtOfStart=%f\n", sqrtOfStart);
+	printf("  a=%f", a);
+	printf(" b=%f", b);
+	printf(" c=%f", c);
+	printf(" delta=%f\n", delta);
+#endif
 
 	//double rangeEnd = (-b+sqrt(delta))/(2*a);
 	//const double test = (0.6666667) * pow(rangeEnd + rangeStart, 1.5)
@@ -717,13 +855,33 @@ int64_t findRangeEndLimited(serverDataPtr server, listPtr excludedRanges,
 	int64_t rangeEnd;
 
 	if(delta > 0)
-		rangeEnd = (int64_t)llround((-b+sqrt(delta))/(2*a)) + rangeStart;
+		rangeEnd = (int64_t)llround((sqrt(delta)-b)/(2*a)) /*+ rangeStart*/;
 	else if(delta == 0)
-		rangeEnd = -b/(2*a) + rangeStart;
+		rangeEnd = (int64_t)llround((-b)/(2*a)) /*+ rangeStart*/;
 
-	if(rangeEnd > rangeLimit)
+#ifdef DEBUG_RANGES
+	printf("findRangeEndLimited(rangeStart, rangeLimit) status:\n");
+	printf("  rangeEnd=%lld\n", rangeEnd);
+#endif
+
+	if(reserveMore > 0)
+		rangeEnd -= reserveMore;
+
+	if(rangeEnd < 0)
+		rangeEnd = 0;
+
+	if(rangeEnd > rangeLimit - rangeStart)
 		rangeEnd = rangeLimit;
+	else
+		rangeEnd += rangeStart;
 
+	//if(rangeEnd > rangeLimit)
+	//	rangeEnd = rangeLimit;
+
+#ifdef DEBUG_RANGES
+		printf("findRangeEndLimited(rangeStart, rangeLimit) returns:\n");
+		printf("  rangeEnd=%lld\n", rangeEnd);
+#endif
 	return rangeEnd;
 }
 
@@ -801,6 +959,34 @@ bool setPrimeRange(serverDataPtr server, listPtr excludedRanges,
 	return true;
 }
 
+void writeHeader(const char* filename)
+{
+	FILE* file = NULL;
+	if((file = fopen(filename, "a")) == NULL)
+		ERR("fopen");
+	fprintf(file, "==  distprime started  ==\n");
+	fprintf(file, "== ");
+	// save timestamp
+	{
+		time_t now;
+		time(&now);
+		char temp[32];
+		timeToString(&now, temp, 32);
+		fprintf(file, "%s", temp);
+	}
+	fprintf(file, " ==\n");
+	fclose(file);
+}
+
+void writeFooter(const char* filename)
+{
+	FILE* file = NULL;
+	if((file = fopen(filename, "a")) == NULL)
+		ERR("fopen");
+	fprintf(file, "====\n\n");
+	fclose(file);
+}
+
 void savePrimes(listPtr list, const char* filename)
 {
 	if(list == NULL)
@@ -808,11 +994,18 @@ void savePrimes(listPtr list, const char* filename)
 	FILE* file = NULL;
 	if((file = fopen(filename, "a")) == NULL)
 		ERR("fopen");
-	fprintf(file, "primes");
+	// save timestamp
+	{
+		time_t now;
+		time(&now);
+		char temp[32];
+		timeToString(&now, temp, 32);
+		fprintf(file, "%s -", temp);
+	}
 	listElemPtr temp = listElemGetFirst(list);
 	while(temp)
 	{
-		fprintf(file, " %llu", valueToPrime(temp->val));
+		fprintf(file, " %lld", valueToPrime(temp->val));
 		temp = temp->next;
 	}
 	fprintf(file, "\n");
