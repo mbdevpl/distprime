@@ -9,16 +9,18 @@
 #include <libxml/xmlmemory.h>
 #include <libxml/parser.h>
 
-// prints contents of network and pipe messages
+// prints contents of received network and pipe messages
 //#define DEBUG
 // prints byte counts sent/received
-//#define DEBUG_IO
+#define DEBUG_IO
 // prints parsed xml message parts recevied from the network
 //#define DEBUG_NETWORK
 // prints from prime range related functions
 //#define DEBUG_RANGES
 // prings confirmed primes related functions
 //#define DEBUG_CONFIRMATION
+// application actually sends content over the network 2/3 of the time
+#define TEST_RETRY
 
 // buffers used for inner processing
 #define BUFSIZE_MAX 10240

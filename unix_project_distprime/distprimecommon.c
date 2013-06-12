@@ -61,11 +61,24 @@ size_t socketSend(const int socket, const struct sockaddr_in* address,
 	}
 
 	size_t sentBytes = 0;
-	if((sentBytes = sendto(socket, buffer, /*bufferLen*/written, 0,
-			(const struct sockaddr *)address, sizeof(struct sockaddr_in))) < 0)
+#ifdef TEST_RETRY
+	bool fake = 0 == rand()%4;
+	if(fake)
 	{
-		ERR("sendto");
+		// this simulates that the content was sent, but lost
+		sentBytes = written;
 	}
+	else
+	{ //ELSE start
+#endif
+		if((sentBytes = sendto(socket, buffer, /*bufferLen*/written, 0,
+				(const struct sockaddr *)address, sizeof(struct sockaddr_in))) < 0)
+		{
+			ERR("sendto");
+		}
+#ifdef TEST_RETRY
+	} //ELSE end
+#endif
 
 	if(sentBytes < written)
 	{
@@ -75,6 +88,10 @@ size_t socketSend(const int socket, const struct sockaddr_in* address,
 	}
 
 #ifdef DEBUG_IO
+#ifdef TEST_RETRY
+	if(fake)
+		printf(" * fake");
+#endif
 	printf(" * sent %d bytes to %s:%d\n", sentBytes,
 		inet_ntoa(address->sin_addr), ntohs(address->sin_port));
 #endif

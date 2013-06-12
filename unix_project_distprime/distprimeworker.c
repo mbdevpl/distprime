@@ -85,6 +85,20 @@ void socketSendPrimes(const int socket, workerDataPtr worker,
 	//}
 }
 
+void socketSendRequest(const int socket, workerDataPtr worker,
+		serverDataPtr server)
+{
+	xmlDocPtr doc = xmlDocCreate();
+	xmlNodePtr msgNode = xmlNodeCreateMsg();
+	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
+	xmlDocSetRootElement(doc, msgNode);
+	xmlAddChild(msgNode, workerNode);
+	int bytesSent = socketSend(socket, &server->address, doc);
+	xmlFreeDoc(doc);
+	if(bytesSent == 0)
+		fprintf(stderr, "ERROR: no primes range request sent\n");
+}
+
 void socketSendStatus(const int socket, workerDataPtr worker,
 		serverDataPtr server)
 {
@@ -95,11 +109,15 @@ void socketSendStatus(const int socket, workerDataPtr worker,
 	xmlDocSetRootElement(doc, msgNode);
 	xmlAddChild(msgNode, workerNode);
 	xmlAddChild(msgNode, serverNode);
-	size_t i;
-	for(i = 0; i < worker->processes; ++i)
+	if(worker->status != STATUS_IDLE)
 	{
-		xmlNodePtr processNode = xmlNodeCreateProcessData(worker->processesData[i], false);
-		xmlAddChild(msgNode, processNode);
+		size_t i;
+		for(i = 0; i < worker->processes; ++i)
+		{
+			xmlNodePtr processNode =
+				xmlNodeCreateProcessData(worker->processesData[i], false);
+			xmlAddChild(msgNode, processNode);
+		}
 	}
 	size_t bytesSent = socketSend(socket, &server->address, doc);
 	xmlFreeDoc(doc);
@@ -284,12 +302,13 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 	if(socket > descriptorSetMax)
 		descriptorSetMax = socket;
 	// broadcasting handshake
-	socketSendHandshake(socket, myData, myServerData);
 	printf("P%d: Broadcasting to port %d...\n",
 		getpid(), ntohs(myServerData->address.sin_port));
+	socketSendHandshake(socket, myData, myServerData);
 	// stores address of last packet sender
 	struct sockaddr_in addressSender;
 	bool keepAlive = true;
+	size_t timeoutCount = 0;
 	while(keepAlive)
 	{
 		// reset the descriptor set
@@ -303,17 +322,10 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 					FD_SET(myData->processesData[i]->pipeRead, &descriptorSet);
 		}
 
-		if(myData->status == STATUS_IDLE && myData->id > 0)
+		if(timeoutCount == 0
+			&& myData->status == STATUS_IDLE && myData->id > 0)
 		{
-			xmlDocPtr doc = xmlDocCreate();
-			xmlNodePtr msgNode = xmlNodeCreateMsg();
-			xmlNodePtr workerNode = xmlNodeCreateWorkerData(myData);
-			xmlDocSetRootElement(doc, msgNode);
-			xmlAddChild(msgNode, workerNode);
-			int bytesSent = socketSend(socket, &myServerData->address, doc);
-			xmlFreeDoc(doc);
-			if(bytesSent == 0)
-				fprintf(stderr, "ERROR: no primes range request sent\n");
+			socketSendRequest(socket, myData, myServerData);
 		}
 
 		struct timeval descriptorSetTimeout;
@@ -328,20 +340,56 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 
 		if(descriptorsToRead == 0)
 		{
+			++timeoutCount;
 			pid_t pid = getpid();
 			switch(myData->status)
 			{
 			case STATUS_IDLE:
-				printf("P%d: Server not available: timeout.\n", pid);
-				keepAlive = false;
+				if(timeoutCount < 3)
+				{
+					keepAlive = true;
+					if(myData->id == 0)
+					{
+						printf("P%d: Server not available...\n", pid);
+						socketSendHandshake(socket, myData, myServerData);
+					}
+					else
+					{
+						printf("P%d: Server not responding...\n", pid);
+						socketSendRequest(socket, myData, myServerData);
+					}
+				}
+				else
+				{
+					keepAlive = false;
+					if(myData->id == 0)
+						printf("P%d: Server not available: timeout.\n", pid);
+					else
+						printf("P%d: Server not responding anymore: timeout.\n", pid);
+				}
 				break;
 			case STATUS_GENERATING:
-				//printf("P%d: Generating primes...\n", pid);
 				keepAlive = true;
+				//printf("P%d: Generating primes...\n", pid);
 				break;
 			case STATUS_CONFIRMING:
-				printf("P%d: Cannot confirm results: timeout.\n", pid);
-				keepAlive = false;
+				if(timeoutCount < 3)
+				{
+					// send primes for all processes that need it
+					keepAlive = true;
+					printf("P%d: Cannot confirm results...\n", pid);
+					size_t i;
+					for(i = 0; i < myData->processes; ++i)
+					{
+						processDataPtr myProcess = myData->processesData[i];
+						socketSendPrimes(socket, myData, myServerData, myProcess);
+					}
+				}
+				else
+				{
+					keepAlive = false;
+					printf("P%d: Cannot confirm results: timeout.\n", pid);
+				}
 				break;
 			default:
 				keepAlive = false;
@@ -349,6 +397,7 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 			}
 			continue;
 		}
+		timeoutCount = 0;
 
 		size_t i;
 		for(i = 0; i < myData->processes; ++i)
@@ -448,7 +497,7 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 						{
 							if(listLength(processesList) == myData->processes)
 							{
-							// received new orders
+								// received new orders
 								size_t index = 0;
 								listElemPtr elem;
 								for(elem = processesList->first; elem; elem = elem->next)

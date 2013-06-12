@@ -108,6 +108,23 @@ void movePrimeRangesToWorker(listPtr ranges, workerDataPtr worker)
 	}
 }
 
+void removeConfirmedPrimes(listPtr list, listPtr confirmed)
+{
+	listElemPtr e1;
+	for(e1 = listElemGetFirst(list); e1; e1 = e1->next)
+	{
+		listElemPtr e2;
+		for(e2 = listElemGetFirst(confirmed); e2; e2 = e2->next)
+		{
+			if(valueToPrime(e1->val) != valueToPrime(e2->val))
+				continue;
+			listElemDetach(list, e1);
+			listElemFree(e1);
+			break;
+		}
+	}
+}
+
 bool socketRespondToHandshake(const int socket, serverDataPtr server,
 		workerDataPtr worker, unsigned int workerIdSentLast)
 {
@@ -144,21 +161,114 @@ bool socketRespondToHandshake(const int socket, serverDataPtr server,
 	return result;
 }
 
-void removeConfirmedPrimes(listPtr list, listPtr confirmed)
+bool socketRespondToRequest(const int socket, serverDataPtr server,
+		workerDataPtr worker)
 {
-	listElemPtr e1;
-	for(e1 = listElemGetFirst(list); e1; e1 = e1->next)
+	bool result = false;
+	// received subsequent request
+	listPtr ranges = createNewPrimeRanges(server, worker);
+	if(listLength(ranges) == worker->processes)
 	{
-		listElemPtr e2;
-		for(e2 = listElemGetFirst(confirmed); e2; e2 = e2->next)
+		// received prime range request
+		worker->status = STATUS_GENERATING;
+		time(&worker->now);
+		worker->statusSince = worker->now;
+		movePrimeRangesToWorker(ranges, worker);
+		socketSendPrimeRanges(socket, server, worker, ranges);
+		result = true;
+	}
+	else if(listLength(ranges) == 0)
+	{
+		// received request, but all prime ranges are allocated
+		result = true;
+	}
+	else
+		fprintf(stderr, "ERROR: wrong number of prime ranges to send\n");
+	listFree(ranges);
+	return result;
+}
+
+bool socketRespondToPrimes(const int socket, serverDataPtr server,
+		workerDataPtr worker, listPtr processes)
+{
+	// received a list of primes
+	bool recognizedWorker = false;
+	bool sentConfirmation = false;
+	workerDataPtr active = matchActiveWorker(server, worker);
+	if(active != NULL)
+	{
+		recognizedWorker = true;
+		listElemPtr e;
+		for(e = listElemGetFirst(processes); e; e = e->next)
 		{
-			if(valueToPrime(e1->val) != valueToPrime(e2->val))
+			processDataPtr proc = (processDataPtr)e->val;
+			if(sentConfirmation)
+			{
+				freeProcessData(proc);
 				continue;
-			listElemDetach(list, e1);
-			listElemFree(e1);
-			break;
+			}
+			size_t i;
+			for(i = 0; i < active->processes; ++i)
+			{
+				processDataPtr activeProcess = active->processesData[i];
+				if(activeProcess == NULL)
+				{
+					// TODO: find this process in server->processesDoneData
+					// check if all new primes are in confirmed
+					// send confirmation
+					// if confirmation sent, break loop:
+					//if(sentConfirmation)
+					//	break;
+					continue;
+				}
+				if(activeProcess->primeFrom == proc->primeFrom)
+				{
+					// received a list of primes from a worker
+					activeProcess->status = proc->status;
+					if(activeProcess->primes == NULL)
+						activeProcess->primes = listCreate();
+					listMerge(activeProcess->primes, proc->primes);
+					proc->primes = NULL;
+					socketSendConfirmation(socket, server, active, activeProcess);
+
+					if(activeProcess->confirmed == NULL)
+						activeProcess->confirmed = listCreate();
+					removeConfirmedPrimes(activeProcess->primes, activeProcess->confirmed);
+					// save all primes to text file, and increase counter
+					{
+						size_t len = listLength(activeProcess->primes);
+						if(len > 0)
+						{
+							savePrimes(activeProcess->primes, server->outputPath);
+							server->primesCount += len;
+						}
+					}
+					listMerge(activeProcess->confirmed, activeProcess->primes);
+					activeProcess->primes = listCreate();
+
+					sentConfirmation = true;
+					if(activeProcess->status == PROCSTATUS_UNCONFIRMED
+							&& listLength(activeProcess->primes) == 0)
+					{
+						activeProcess->status = PROCSTATUS_CONFIRMED;
+						active->processesData[i] = NULL;
+						time(&activeProcess->finished);
+						server->processesDone += 1;
+						listElemInsertEnd(server->processesDoneData, (data_type)activeProcess);
+					}
+					break;
+				}
+			}
+			freeProcessData(proc);
 		}
 	}
+	if(recognizedWorker && sentConfirmation)
+		return true;
+	if(!recognizedWorker)
+		fprintf(stderr, "ERROR: did not recognize worker\n");
+	if(!sentConfirmation)
+		fprintf(stderr, "ERROR: did not send any confirmation\n");
+	return false;
 }
 
 double calcProgress(serverDataPtr server)
@@ -289,29 +399,33 @@ void serverLoop(serverDataPtr myData)
 			for(e1 = listElemGetFirst(myData->workersActiveData); e1;)
 			{
 				workerDataPtr active = (workerDataPtr)e1->val;
-				time_t diff = now - active->now;
+				time_t statusAge = now - active->statusSince;
 				// wait 3 seconds before checking up on the worker,
-				// and another 3 for response
-				//printf("%ld-%ld=%ld\n", now, active->now, diff);
-				if(diff >= 3)
+				// and another 7 for response
+				if(statusAge >= 10)
 				{
-					if(active->now == active->statusSince)
-					{
-						// last communication was from the client, so it's time to send ping
-						active->now = now;
-						socketSendStatusRequest(socket, myData, active);
-					}
-					else
-					{
-						// being deaf has consequences
-						listElemPtr temp = e1;
-						e1 = e1->next;
-						listElemDetach(myData->workersActiveData, temp);
-						myData->workersActive -= 1;
-						freeWorkerData(active);
-						free(temp);
-						continue;
-					}
+					//else
+					//{
+					// being deaf has consequences
+					listElemPtr temp = e1;
+					e1 = e1->next;
+					listElemDetach(myData->workersActiveData, temp);
+					myData->workersActive -= 1;
+					freeWorkerData(active);
+					free(temp);
+					continue;
+					//}
+				}
+				time_t nowDiff = now - active->now;
+				//printf("%ld-%ld=%ld\n", now, active->now, nowDiff);
+				if(nowDiff >= 3)
+				{
+					//if(active->now == active->statusSince)
+					//{
+					// it's time to send the ping
+					active->now = now;
+					socketSendStatusRequest(socket, myData, active);
+					//}
 				}
 				e1 = e1->next;
 			}
@@ -353,97 +467,8 @@ void serverLoop(serverDataPtr myData)
 					{
 						if(listLength(processesList) > 0)
 						{
-							// received a list of primes
-							bool recognizedWorker = false;
-							bool sentConfirmation = false;
-							listElemPtr elem;
-							for(elem = listElemGetFirst(myData->workersActiveData); elem; elem = elem->next)
-							{
-								workerDataPtr active = (workerDataPtr)elem->val;
-								if(active->hash == worker->hash)
-								{
-									listElemPtr e;
-									for(e = listElemGetFirst(processesList); e; e = e->next)
-									{
-										processDataPtr proc = (processDataPtr)e->val;
-										if(sentConfirmation)
-										{
-											freeProcessData(proc);
-											continue;
-										}
-										size_t i;
-										for(i = 0; i < active->processes; ++i)
-										{
-											processDataPtr activeProcess = active->processesData[i];
-											if(activeProcess == NULL)
-											{
-												// TODO: find this process in myData->processesDoneData
-												// check if all new primes are in confirmed
-												// send confirmation
-												// if confirmation sent, break loop:
-												//if(sentConfirmation)
-												//	break;
-												continue;
-											}
-											if(activeProcess->primeFrom == proc->primeFrom)
-											{
-												// received a list of primes from a worker
-												activeProcess->status = proc->status;
-												if(activeProcess->primes == NULL)
-													activeProcess->primes = listCreate();
-												listMerge(activeProcess->primes, proc->primes);
-												proc->primes = NULL;
-												//printf("TESTU\n");
-												//listElemPtr e2;
-												//for(e2 = listElemGetFirst(proc->primes); e2; e2 = e2->next)
-												//	listElemInsertEnd(myData->primes, e2->val);
-												socketSendConfirmation(socket, myData, active, activeProcess);
-
-												if(activeProcess->confirmed == NULL)
-													activeProcess->confirmed = listCreate();
-												removeConfirmedPrimes(activeProcess->primes, activeProcess->confirmed);
-												// save all primes to text file, and increase counter
-												{
-													size_t len = listLength(activeProcess->primes);
-													if(len > 0)
-													{
-														savePrimes(activeProcess->primes, myData->outputPath);
-														myData->primesCount += len;
-													}
-												}
-												listMerge(activeProcess->confirmed, activeProcess->primes);
-												activeProcess->primes = listCreate();
-
-												sentConfirmation = true;
-												if(activeProcess->status == PROCSTATUS_UNCONFIRMED
-														&& listLength(activeProcess->primes) == 0)
-												{
-													activeProcess->status = PROCSTATUS_CONFIRMED;
-													active->processesData[i] = NULL;
-													time(&activeProcess->finished);
-													myData->processesDone += 1;
-													listElemInsertEnd(myData->processesDoneData, (data_type)activeProcess);
-												}
-												break;
-											}
-										}
-										freeProcessData(proc);
-									}
-									recognizedWorker = true;
-									break;
-								}
-							}
-							if(recognizedWorker && sentConfirmation)
-							{
-								msgHandled = true;
-							}
-							else
-							{
-								if(!recognizedWorker)
-									fprintf(stderr, "ERROR: did not recognize worker\n");
-								if(!sentConfirmation)
-									fprintf(stderr, "ERROR: did not send any confirmation\n");
-							}
+							msgHandled = socketRespondToPrimes(socket, myData,
+									worker, processesList);
 						}
 						else
 						{
@@ -464,46 +489,13 @@ void serverLoop(serverDataPtr myData)
 								}
 								if(workerReady)
 								{
-									// received subsequent request
-									listPtr ranges = createNewPrimeRanges(myData, active);
-									if(listLength(ranges) == active->processes)
-									{
-										// received prime range request
-										active->status = STATUS_GENERATING;
-										time(&active->now);
-										active->statusSince = active->now;
-										movePrimeRangesToWorker(ranges, active);
-
-										socketSendPrimeRanges(socket, myData, active, ranges);
-										msgHandled = true;
-									}
-									else if(listLength(ranges) == 0)
-									{
-										// received broadcast, but all prime ranges are allocated
-										msgHandled = true;
-									}
-									else
-										fprintf(stderr, "ERROR: wrong number of prime ranges to send\n");
-									listFree(ranges);
+									msgHandled = socketRespondToRequest(socket, myData, active);
 								}
 								else
 									fprintf(stderr, "ERROR: worker not ready\n");
 							}
-							//listElemPtr e1;
-							//for(e1 = listElemGetFirst(myData->workersActiveData); e1; e1 = e1->next)
-							//{
-							//	workerDataPtr w1 = (workerDataPtr)e1->val;
-							//	if(w1->hash == worker->hash && w1->id == worker->id)
-							//	{
-							//		foundWorker = true;
-							//	}
-							//	if(foundWorker)
-							//		break;
-							//}
 							if(!foundWorker)
 								fprintf(stderr, "ERROR: registered worker not found\n");
-							//if(!workerReady)
-							//	if(!foundWorker)
 						}
 					}
 					freeWorkerData(worker);
@@ -785,7 +777,7 @@ int64_t findRangeEndLimited(serverDataPtr server, listPtr excludedRanges,
 #endif
 	if(rangeStart < 1 || rangeStart > rangeLimit)
 	{
-		fprintf(stderr, "ERROR: didn't get the proper prime range end\n");
+		fprintf(stderr, "ERROR: prime range start %lld is invalid, so range end cannot be found\n", rangeStart);
 		return 0LL;
 	}
 	if(rangeStart == 1)
@@ -848,7 +840,7 @@ int64_t findRangeEndLimited(serverDataPtr server, listPtr excludedRanges,
 
 	if(delta < 0)
 	{
-		fprintf(stderr, "ERROR: didn't get the proper prime range end\n");
+		fprintf(stderr, "ERROR: prime range end formula is wrong\n");
 		return 0LL;
 	}
 
@@ -945,7 +937,7 @@ bool setPrimeRange(serverDataPtr server, listPtr excludedRanges,
 	printProcessData(process);
 #endif
 	process->primeFrom = findRangeStart(server, excludedRanges);
-	if(process->primeFrom == 0)
+	if(process->primeFrom == 0 || process->primeFrom > server->primeTo)
 		return false;
 	process->primeTo = findRangeEnd(server, excludedRanges, reserveMore, process->primeFrom);
 	if(process->primeTo == 0 || process->primeFrom > process->primeTo)
