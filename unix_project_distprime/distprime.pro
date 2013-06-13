@@ -15,7 +15,8 @@ SOURCES += \
 	distprimeworker.c \
     workerdata.c \
     processdata.c \
-    serverdata.c
+    serverdata.c \
+    primerange.c
 
 HEADERS += \
 	mbdev_unix.h \
@@ -24,7 +25,8 @@ HEADERS += \
     workerdata.h \
     processdata.h \
     serverdata.h \
-    defines.h
+    defines.h \
+    primerange.h
 
 OTHER_FILES += \
 	Makefile \

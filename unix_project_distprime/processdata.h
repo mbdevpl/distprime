@@ -9,6 +9,8 @@ struct _processData
 {
 	int pipeRead;
 	int pipeWrite;
+	char* pipeReadBuf; // of size BUFSIZE_MAX
+	size_t pipeReadBufCount;
 	int64_t primeFrom;
 	int64_t primeTo;
 	int64_t primeRange;

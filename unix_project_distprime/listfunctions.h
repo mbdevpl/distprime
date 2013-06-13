@@ -22,6 +22,9 @@
 #include <malloc.h>
 #include <time.h>
 
+// used to print a lot of extra output
+//#define DEBUG_LISTFUNCTIONS
+
 // type of data, can be safely changed to any integral, numerical data type
 typedef void* data_type;
 #define DATA_TYPE_FORMAT "%d"
@@ -67,7 +70,7 @@ void listMerge(listPtr list1, listPtr list2);
 void listElemRemoveFirst(listPtr list);
 void listElemRemove(listPtr list, size_t index);
 void listElemRemoveLast(listPtr list);
-void listElemDetach(listPtr list, listElemPtr elem);
+int listElemDetach(listPtr list, listElemPtr elem);
 void listClear(listPtr list);
 
 //properties of lists
@@ -88,6 +91,8 @@ void listElemMove(listElemPtr elem, listPtr from, listPtr to);
 //void selectionSort(struct list**head);
 
 void listPrint(listPtr list, FILE* f);
+void listPrintStatistics(listPtr list, FILE* f);
+void listPrintErrors(listPtr list, FILE* f);
 
 //printing elements on screen
 //void printList(struct list**head);

@@ -92,7 +92,8 @@ workerDataPtr matchActiveWorker(serverDataPtr server, workerDataPtr match)
 	for(elem = listElemGetFirst(server->workersActiveData); elem; elem = elem->next)
 	{
 		workerDataPtr active = (workerDataPtr)elem->val;
-		if(active->hash == match->hash && active->id == match->id)
+		if(active->hash == match->hash && active->id == match->id
+			&& active->address.sin_port == active->address.sin_port)
 			return active;
 	}
 	return NULL;

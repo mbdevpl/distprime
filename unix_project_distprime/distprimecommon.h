@@ -8,15 +8,11 @@
 #include "serverdata.h"
 
 void addressCreate(struct sockaddr_in* address, uint32_t ip, in_port_t port);
-
 void socketCreate(int* socket, int timeoutSeconds, bool broadcastEnable,
 		bool reuseAddress);
-
 void socketBind(int socket, struct sockaddr_in* addr);
-
 size_t socketSend(const int socket, const struct sockaddr_in* address,
 		const xmlDocPtr doc);
-
 size_t socketReceive(const int socket, struct sockaddr_in* senderAddress,
 		xmlDocPtr* doc);
 

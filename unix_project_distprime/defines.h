@@ -12,7 +12,7 @@
 // prints contents of received network and pipe messages
 //#define DEBUG
 // prints byte counts sent/received
-#define DEBUG_IO
+//#define DEBUG_IO
 // prints parsed xml message parts recevied from the network
 //#define DEBUG_NETWORK
 // prints from prime range related functions
@@ -20,15 +20,15 @@
 // prings confirmed primes related functions
 //#define DEBUG_CONFIRMATION
 // application actually sends content over the network 2/3 of the time
-#define TEST_RETRY
+//#define TEST_RETRY
 
 // buffers used for inner processing
-#define BUFSIZE_MAX 10240
+#define BUFSIZE_MAX PIPE_BUF//10240
 
 // max length of string with primes
 // (without taking other xml tags into account)
 // customize it to adjust to different MTU settings
-#define PRIMESPACKETSIZE_MAX 1000
+#define PRIMESPACKETSIZE_MAX 1000 // currently not used
 
 #define XMLCHARS BAD_CAST
 #define CHARS (const char*)
@@ -56,5 +56,7 @@
 #define PROCSTATUS_UNCONFIRMED 5
 // all done
 #define PROCSTATUS_CONFIRMED 6
+// unique status reserved for situations when server requested less processes
+#define PROCSTATUS_IDLE 7
 
 #endif // DEFINES_H

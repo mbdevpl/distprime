@@ -61,11 +61,17 @@
 	__result; }))
 #endif
 
+// errno error
 #define ERR(source) (fprintf(stderr,"%s:%d\n",__FILE__,__LINE__), \
 	perror(source),kill(0,SIGTERM), \
 	exit(EXIT_FAILURE))
 
+// h_errno error
 #define HERR(source) (fprintf(stderr,"%s(%d) at %s:%d\n",source,h_errno,__FILE__,__LINE__), \
+	exit(EXIT_FAILURE))
+
+// custom error
+#define CERR(source) (fprintf(stderr,"%s at %s:%d\n",source,__FILE__,__LINE__), \
 	exit(EXIT_FAILURE))
 
 void reverse(char* s);

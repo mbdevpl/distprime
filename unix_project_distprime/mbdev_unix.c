@@ -296,14 +296,20 @@ size_t bulk_write(int fd, char* buf, size_t count)
 {
 	int c;
 	size_t len=0;
+	//printf("TEST3\n");
 	do{
+		if(strlen(buf) < count)
+			CERR("strlen less than count");
+		//printf("TEST %d %u %u\n", fd, strlen(buf), count);
 		c=TEMP_FAILURE_RETRY(write(fd,buf,count));
+		//printf("%s\n", buf);
 		if(c<0) return c;
 		buf+=c;
 		len+=c;
 		count-=c;
 	}while(count>0);
-	return len ;
+	//printf("TEST4\n");
+	return len;
 }
 
 

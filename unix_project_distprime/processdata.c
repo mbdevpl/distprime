@@ -144,17 +144,18 @@ listPtr stringToPrimes(const char* buffer, int bufferLen)
 	listPtr primes = listCreate();
 	int i = 0;
 	size_t count = 0;
+	char* start = (char*)buffer;
 	while(i < bufferLen)
 	{
-		char* nextChar = strchr(buffer,',');
-		if(nextChar != NULL)
+		char* nextChar = strchr(start,',');
+		if(nextChar != NULL && nextChar-buffer+1 < bufferLen)
 			*nextChar = '\0';
-		listElemInsertEndPrime(primes, (int64_t)strtoull(buffer, NULL, 10));
+		listElemInsertEndPrime(primes, (int64_t)strtoull(start, NULL, 10));
 		++count;
 		if(nextChar == NULL)
 			break;
-		i += nextChar+1-buffer;
-		buffer = nextChar+1;
+		i += nextChar+1-start;
+		start = nextChar+1;
 	}
 	return primes;
 }

@@ -1,13 +1,26 @@
-
 #include "distprimecommon.h"
-#include "workerdata.h"
-#include "serverdata.h"
 
 #define NETWORK_TIMEOUT 5 // seconds
 
 void usage();
 int main(int argc, char** argv);
 void workerLoop(workerDataPtr myData, serverDataPtr myServerData);
+
+// in all below functions:
+// 'socket' is a socket used to send data,
+// 'worker' is the complete state of this program
+// 'server' is a set of data of the server (ex. its address)
+void socketSendHandshake(const int socket, workerDataPtr worker,
+		serverDataPtr server);
+void socketSendPrimes(const int socket, workerDataPtr worker,
+		serverDataPtr server, processDataPtr process);
+void socketSendRequest(const int socket, workerDataPtr worker,
+		serverDataPtr server);
+void socketSendStatus(const int socket, workerDataPtr worker,
+		serverDataPtr server);
+bool receivedPrimeRanges(workerDataPtr worker, listPtr ranges);
+bool receivedConfirmation(workerDataPtr worker, listPtr processesList);
+
 void invokePrimesGenerator(processDataPtr process);
 bool isPrime(int64_t number);
 void generatePrimes(processDataPtr process);
@@ -20,133 +33,6 @@ void usage()
 	fprintf(stderr, "EXAMPLE: distprimeworker 8765 8\n");
 	exitNormal();
 }
-
-void socketSendHandshake(const int socket, workerDataPtr worker,
-		serverDataPtr server)
-{
-	struct sockaddr_in addressBroadcast;
-	addressCreate(&addressBroadcast, INADDR_BROADCAST, ntohs(server->address.sin_port));
-
-	// send xml
-	xmlDocPtr doc = xmlDocCreate();
-	xmlNodePtr msgNode = xmlNodeCreateMsg();
-	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
-	xmlAddChild(msgNode, workerNode);
-	xmlDocSetRootElement(doc, msgNode);
-	int bytesSent = socketSend(socket, &addressBroadcast, doc);
-	xmlFreeDoc(doc);
-
-	if(bytesSent == 0)
-		fprintf(stderr, "ERROR: no broadcast sent\n");
-}
-
-void socketSendPrimes(const int socket, workerDataPtr worker,
-		serverDataPtr server, processDataPtr process)
-{
-	//size_t i;
-	//for(i = 0; i < worker->processes; ++i)
-	//{
-	//processDataPtr process = worker->processesData[i];
-
-	//int primesCount = listLength(process->primes);
-
-	//listElemPtr currPrime = process->primes->first;
-	//int64_t primesFrag[50];
-
-	//while(primesCount > 0)
-	//{
-	//size_t j;
-	//size_t max = primesCount > 50 ? 50 : primesCount;
-	//for(j = 0; j < max; ++j)
-	//{
-	//	primesFrag[j] = valueToPrime(currPrime->val);
-	//	currPrime = currPrime->next;
-	//}
-
-	xmlDocPtr doc = xmlDocCreate();
-	xmlNodePtr msgNode = xmlNodeCreateMsg();
-	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
-	//int currCount = 50;
-	//if(primesCount < 50) currCount = primesCount;
-	xmlNodePtr processNode = xmlNodeCreateProcessData(process, true);
-
-	xmlDocSetRootElement(doc, msgNode);
-	xmlAddChild(msgNode, workerNode);
-	xmlAddChild(msgNode, processNode);
-
-	// send data to server
-	size_t bytesSent = socketSend(socket, &server->address, doc);
-	xmlFreeDoc(doc);
-
-	if(bytesSent == 0)
-		fprintf(stderr, "ERROR: no primes sent\n");
-	//primesCount -= 50;
-	//}
-	//}
-}
-
-void socketSendRequest(const int socket, workerDataPtr worker,
-		serverDataPtr server)
-{
-	xmlDocPtr doc = xmlDocCreate();
-	xmlNodePtr msgNode = xmlNodeCreateMsg();
-	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
-	xmlDocSetRootElement(doc, msgNode);
-	xmlAddChild(msgNode, workerNode);
-	int bytesSent = socketSend(socket, &server->address, doc);
-	xmlFreeDoc(doc);
-	if(bytesSent == 0)
-		fprintf(stderr, "ERROR: no primes range request sent\n");
-}
-
-void socketSendStatus(const int socket, workerDataPtr worker,
-		serverDataPtr server)
-{
-	xmlDocPtr doc = xmlDocCreate();
-	xmlNodePtr msgNode = xmlNodeCreateMsg();
-	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
-	xmlNodePtr serverNode = xmlNodeCreateServerData(server);
-	xmlDocSetRootElement(doc, msgNode);
-	xmlAddChild(msgNode, workerNode);
-	xmlAddChild(msgNode, serverNode);
-	if(worker->status != STATUS_IDLE)
-	{
-		size_t i;
-		for(i = 0; i < worker->processes; ++i)
-		{
-			xmlNodePtr processNode =
-				xmlNodeCreateProcessData(worker->processesData[i], false);
-			xmlAddChild(msgNode, processNode);
-		}
-	}
-	size_t bytesSent = socketSend(socket, &server->address, doc);
-	xmlFreeDoc(doc);
-	if(bytesSent == 0)
-		fprintf(stderr, "ERROR: no status sent\n");
-}
-
-/*//void socketOutSendStatus(const int socketOut, const struct sockaddr_in* addrOut,
-//		workerDataPtr worker)
-//{
-//	xmlDocPtr doc = commCreateDoc();
-//	xmlNodePtr root = commCreateMsgNode();
-//	xmlNodePtr workerdata = commCreateWorkerdataNode(worker);
-//	xmlDocSetRootElement(doc, root);
-//	xmlAddChild(root, workerdata);
-
-//	char bufferOut[BUFSIZE_MAX];
-//	int bytesOut = 0;
-//	commXmlToString(doc, bufferOut, &bytesOut, BUFSIZE_MAX);
-
-//	int bytesSent = 0;
-//	while(bytesOut != bytesSent)
-//		socketOutSend(socketOut, bufferOut, bytesOut, addrOut, &bytesSent);
-
-//	xmlFreeDoc(doc);
-
-//	if(bytesSent == 0)
-//		fprintf(stderr, "ERROR: sending status\n");
-//}*/
 
 int main(int argc, char** argv)
 {
@@ -183,12 +69,111 @@ int main(int argc, char** argv)
 	return EXIT_SUCCESS;
 }
 
+// server and worker not needed
+bool readPrimesFromPipe(workerDataPtr worker,
+		serverDataPtr server, processDataPtr process)
+{
+	char buffer[BUFSIZE_MAX];
+	memset(buffer, '\0', BUFSIZE_MAX * sizeof(char));
+	size_t bytesRead = readUntil(process->pipeRead, buffer, BUFSIZE_MAX, '\n');
+	if(bytesRead < 0)
+		ERR("read");
+	else if(bytesRead > 0)
+	{
+#ifdef DEBUG_IO
+		printf(" * read %u bytes from pipe\n", bytesRead);
+#endif
+#ifdef DEBUG
+		printf("--------\n%s\n--------\n", buffer);
+#endif
+		char* start = buffer;
+		char* newline = NULL;
+		do
+		{
+			newline = strchr(start, '\n');
+			if(newline == NULL)
+				break;
+			size_t len = newline-start+1;
+			if(len < bytesRead)
+			{
+				//printf("--------\n%s\n--------\n", start);
+				//printf(" ** will parse %u out of %u available\n",
+				//	len, bytesRead-(start-buffer));
+			}
+			listPtr newPrimes = NULL;
+			if(process->pipeReadBufCount == 0)
+				newPrimes = stringToPrimes(start, len);
+			else
+			{
+				//printf("pipebuf before:\n--------\n%s\n--------\n", process->pipeReadBuf);
+				//printf("strlen=%u count=%u\n",
+				//	strlen(process->pipeReadBuf), process->pipeReadBufCount);
+				// copy frag to pipeBuf
+				char* header = process->pipeReadBuf + process->pipeReadBufCount;
+				if(process->pipeReadBufCount + len > BUFSIZE_MAX)
+					CERR("temporary pipe buffer buffer is too small");
+				strncpy(header, start, len);
+				process->pipeReadBufCount += len;
+				process->pipeReadBuf[process->pipeReadBufCount] = '\0';
+				//printf("pipebuf after:\n--------\n%s\n--------\n", process->pipeReadBuf);
+				//printf("header (len = %u):\n--------\n%s\n--------\n", len, header);
+				//printf("strlen=%u count=%u\n",
+				//	strlen(process->pipeReadBuf), process->pipeReadBufCount);
+				newPrimes = stringToPrimes(process->pipeReadBuf, process->pipeReadBufCount);
+				//clear pipeBuf
+				process->pipeReadBuf[0] = '\0';
+				process->pipeReadBufCount = 0;
+			}
+			//if(len < bytesRead)
+			//	printf(" ** parsed %u primes\n", listLength(newPrimes));
+			if(process->primes == NULL)
+				CERR("primes list is NULL");
+			listMerge(process->primes, newPrimes);
+			start += len;
+		}
+		while(newline != NULL);
+		//copy remaining fragment to temp buf
+		if(newline == NULL && start != NULL)
+		{
+			size_t fraglen = strnlen(start, bytesRead);
+			if(fraglen > 0)
+			{
+				if(process->pipeReadBufCount + fraglen > BUFSIZE_MAX)
+					CERR("temporary pipe buffer buffer is too small");
+				strncpy(process->pipeReadBuf + process->pipeReadBufCount, start, fraglen);
+				process->pipeReadBufCount += fraglen;
+				//printf("pipebuf now:\n--------\n%s\n--------\n", process->pipeReadBuf);
+			}
+		}
+		if(server->address.sin_port > 0)
+		{
+			if(valueToPrime(listElemGetLast(process->primes)->val) == 0)
+			{
+				listElemRemoveLast(process->primes);
+				time(&process->finished);
+				process->status = PROCSTATUS_UNCONFIRMED;
+			}
+			return true;
+		}
+		else
+			fprintf(stderr, "ERROR: server address unknown but primes ready\n");
+	}
+	else
+		fprintf(stderr, "ERROR: read pipe but it was empty\n");
+	return false;
+}
+
 void moveConfirmedPrimes(listPtr from, listPtr to, listPtr moved)
 {
 #ifdef DEBUG_CONFIRMATION
 	printf("moveConfirmedPrimes(from, to, moved)\n");
 	printf("  |from|=%u |to|=%u |moved|=%u\n",
 		listLength(from), listLength(to), listLength(moved));
+	listPrintStatistics(from, stdout);
+	listPrintErrors(from, stdout);
+	listPrintStatistics(to, stdout);
+	listPrintErrors(to, stdout);
+	printf("\n");
 #endif
 	listElemPtr e1;
 	listElemPtr e2;
@@ -210,6 +195,9 @@ void moveConfirmedPrimes(listPtr from, listPtr to, listPtr moved)
 #ifdef DEBUG_CONFIRMATION
 	printf("moveConfirmedPrimes(from, to, moved) returns:\n");
 	printf("  |from|=%u |to|=%u\n", listLength(from), listLength(to));
+	listPrintStatistics(from, stdout);
+	listPrintStatistics(to, stdout);
+	printf("\n");
 #endif
 }
 
@@ -221,7 +209,10 @@ bool updateStatusIfConfirmedAll(workerDataPtr worker)
 	bool allFinished = true;
 	for(i = 0; i < worker->processes; ++i)
 	{
-		if(worker->processesData[i]->status != PROCSTATUS_CONFIRMED)
+		processDataPtr process = (processDataPtr)worker->processesData[i];
+		if(process->status == PROCSTATUS_IDLE)
+			continue;
+		if(process->status != PROCSTATUS_CONFIRMED)
 			allFinished = false;
 	}
 	if(!allFinished)
@@ -249,10 +240,13 @@ bool updateStatusIfGeneratedAll(workerDataPtr worker)
 	size_t i;
 	for(i = 0; i < worker->processes; ++i)
 	{
-		if(worker->processesData[i]->status != PROCSTATUS_UNCONFIRMED
-				&& worker->processesData[i]->status != PROCSTATUS_CONFIRMED)
+		processDataPtr process = (processDataPtr)worker->processesData[i];
+		if(process->status == PROCSTATUS_IDLE)
+			continue;
+		if(process->status != PROCSTATUS_UNCONFIRMED
+				&& process->status != PROCSTATUS_CONFIRMED)
 			allAtLeastConfirming = false;
-		if(worker->processesData[i]->status != PROCSTATUS_CONFIRMED)
+		if(process->status != PROCSTATUS_CONFIRMED)
 			allConfirmed = false;
 	}
 	if(!allAtLeastConfirming || allConfirmed)
@@ -278,6 +272,9 @@ int setupProcessesAndPipes(workerDataPtr worker)
 		processDataPtr myProcess = worker->processesData[i];
 		myProcess->pipeRead = pipes[0];
 		myProcess->pipeWrite = pipes[1];
+		myProcess->pipeReadBuf = (char*)malloc(BUFSIZE_MAX*sizeof(char));
+		memset(myProcess->pipeReadBuf, '\0', BUFSIZE_MAX);
+		myProcess->pipeReadBufCount = 0;
 		myProcess->primes = listCreate();
 	}
 	return descriptorSetMax;
@@ -382,7 +379,8 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 					for(i = 0; i < myData->processes; ++i)
 					{
 						processDataPtr myProcess = myData->processesData[i];
-						socketSendPrimes(socket, myData, myServerData, myProcess);
+						if(myProcess->status != PROCSTATUS_IDLE)
+							socketSendPrimes(socket, myData, myServerData, myProcess);
 					}
 				}
 				else
@@ -407,41 +405,12 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 			if(FD_ISSET(pipe, &descriptorSet))
 			{
 				FD_CLR(pipe, &descriptorSet);
-
-				char buffer[BUFSIZE_MAX];
-				memset(buffer, '\0', BUFSIZE_MAX * sizeof(char));
-				size_t bytesRead = readUntil(pipe, buffer, BUFSIZE_MAX, '\n');
-				if(bytesRead < 0)
-					ERR("read");
-				else if(bytesRead > 0)
-				{
-#ifdef DEBUG_IO
-					printf(" * read %u bytes from pipe\n", bytesRead);
-#endif
-#ifdef DEBUG
-					printf("--------\n%s\n--------\n", buffer);
-#endif
-					listPtr newPrimes = stringToPrimes(buffer, bytesRead);
-					listMerge(myProcess->primes, newPrimes);
-
-					if(myServerData->address.sin_port > 0)
-					{
-						if(valueToPrime(listElemGetLast(myProcess->primes)->val) == 0)
-						{
-							listElemRemoveLast(myProcess->primes);
-							time(&myProcess->finished);
-							myProcess->status = PROCSTATUS_UNCONFIRMED;
-						}
-						// send results back to the server
-						socketSendPrimes(socket, myData, myServerData, myProcess);
-						if(updateStatusIfGeneratedAll(myData))
-							printf("P%d: Waiting for confirmation...\n", getpid());
-					}
-					else
-						fprintf(stderr, "ERROR: server address unknown but primes ready\n");
-				}
-				else
-					fprintf(stderr, "ERROR: read pipe but it was empty\n");
+				//printf("%u\n", listLength(myProcess->primes));
+				readPrimesFromPipe(myData, myServerData, myProcess);
+				// send results back to the server
+				socketSendPrimes(socket, myData, myServerData, myProcess);
+				if(updateStatusIfGeneratedAll(myData))
+					printf("P%d: Waiting for confirmation...\n", getpid());
 			}
 		}
 
@@ -490,76 +459,16 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 				{
 					if(listLength(processesList) > 0)
 					{
-						//processDataPtr first = (processDataPtr)processesList->first->val;
-						//if(listLength(first->primes) == 0)
-						//{
 						if(myData->status == STATUS_IDLE)
 						{
-							if(listLength(processesList) == myData->processes)
-							{
-								// received new orders
-								size_t index = 0;
-								listElemPtr elem;
-								for(elem = processesList->first; elem; elem = elem->next)
-								{
-									processDataPtr process = (processDataPtr)elem->val;
-									processDataPtr myProcess = myData->processesData[index];
-									time(&myProcess->started);
-									myProcess->primeFrom = process->primeFrom;
-									myProcess->primeTo = process->primeTo;
-									myProcess->primeRange = process->primeRange;
-									myProcess->status = PROCSTATUS_COMPUTING;
-									invokePrimesGenerator(myProcess);
-									++index;
-									freeProcessData(process);
-								}
-								if(index < myData->processes)
-									fprintf(stderr, "ERROR: not all processes launched\n");
-
-								myData->status = STATUS_GENERATING;
-								msgHandled = true;
-							}
-							else
-								fprintf(stderr, "ERROR: incorrect number of processes\n");
+							msgHandled = receivedPrimeRanges(myData, processesList);
 						}
 						else if(myData->status == STATUS_GENERATING
 							|| myData->status == STATUS_CONFIRMING)
 						{
+							msgHandled = receivedConfirmation(myData, processesList);
 							// received confirmation
-							bool movedPrimes = false;
-							listElemPtr elem;
-							for(elem = processesList->first; elem; elem = elem->next)
-							{
-								processDataPtr process = (processDataPtr)elem->val;
-								for(i = 0; i < myData->processes; ++i)
-								{
-									processDataPtr myProcess = myData->processesData[i];
-									if(process->primeFrom == myProcess->primeFrom
-										&& process->primeTo == myProcess->primeTo)
-									{
-										if(myProcess->confirmed == NULL)
-											myProcess->confirmed = listCreate();
-										moveConfirmedPrimes(myProcess->primes,
-											myProcess->confirmed, process->primes);
-										movedPrimes = true;
-										if(myProcess->status == PROCSTATUS_UNCONFIRMED
-											&& listLength(myProcess->primes) == 0)
-											myProcess->status = PROCSTATUS_CONFIRMED;
-										break;
-									}
-								}
-							}
-							if(updateStatusIfConfirmedAll(myData))
-								printf("P%d: All results were confirmed.\n", getpid());
-							if(movedPrimes)
-								msgHandled = true;
-							else
-								fprintf(stderr, "ERROR: did not move any primes\n");
 						}
-						//}
-						//else
-						//{
-						//}
 					}
 					else if(listLength(processesList) == 0)
 					{
@@ -593,10 +502,200 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 			processDataPtr myProcess = myData->processesData[i];
 			closefifo(myProcess->pipeRead);
 			closefifo(myProcess->pipeWrite);
+			free(myProcess->pipeReadBuf);
+			listFree(myProcess->primes);
 		}
 	}
 	closeSocket(socket);
 	xmlCleanupParser();
+}
+
+void socketSendHandshake(const int socket, workerDataPtr worker,
+		serverDataPtr server)
+{
+	struct sockaddr_in addressBroadcast;
+	addressCreate(&addressBroadcast, INADDR_BROADCAST, ntohs(server->address.sin_port));
+
+	// send xml
+	xmlDocPtr doc = xmlDocCreate();
+	xmlNodePtr msgNode = xmlNodeCreateMsg();
+	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
+	xmlAddChild(msgNode, workerNode);
+	xmlDocSetRootElement(doc, msgNode);
+	int bytesSent = socketSend(socket, &addressBroadcast, doc);
+	xmlFreeDoc(doc);
+
+	if(bytesSent == 0)
+		fprintf(stderr, "ERROR: no broadcast sent\n");
+}
+
+void socketSendPrimes(const int socket, workerDataPtr worker,
+		serverDataPtr server, processDataPtr process)
+{
+	//size_t i;
+	//for(i = 0; i < worker->processes; ++i)
+	//{
+	//processDataPtr process = worker->processesData[i];
+
+	size_t primesCount = listLength(process->primes);
+
+	if(primesCount > 50)
+		CERR("can't send that many primes without risking fragmentation");
+
+	//listElemPtr currPrime = process->primes->first;
+	//int64_t primesFrag[50];
+
+	//while(primesCount > 0)
+	//{
+	//size_t j;
+	//size_t max = primesCount > 50 ? 50 : primesCount;
+	//for(j = 0; j < max; ++j)
+	//{
+	//	primesFrag[j] = valueToPrime(currPrime->val);
+	//	currPrime = currPrime->next;
+	//}
+
+	xmlDocPtr doc = xmlDocCreate();
+	xmlNodePtr msgNode = xmlNodeCreateMsg();
+	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
+	//int currCount = 50;
+	//if(primesCount < 50) currCount = primesCount;
+	xmlNodePtr processNode = xmlNodeCreateProcessData(process, true);
+
+	xmlDocSetRootElement(doc, msgNode);
+	xmlAddChild(msgNode, workerNode);
+	xmlAddChild(msgNode, processNode);
+
+	// send data to server
+	size_t bytesSent = socketSend(socket, &server->address, doc);
+	xmlFreeDoc(doc);
+
+	if(bytesSent == 0)
+		fprintf(stderr, "ERROR: no primes sent\n");
+	//primesCount -= 50;
+	//}
+	//}
+}
+
+void socketSendRequest(const int socket, workerDataPtr worker,
+		serverDataPtr server)
+{
+	xmlDocPtr doc = xmlDocCreate();
+	xmlNodePtr msgNode = xmlNodeCreateMsg();
+	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
+	xmlDocSetRootElement(doc, msgNode);
+	xmlAddChild(msgNode, workerNode);
+	int bytesSent = socketSend(socket, &server->address, doc);
+	xmlFreeDoc(doc);
+	if(bytesSent == 0)
+		fprintf(stderr, "ERROR: no primes range request sent\n");
+}
+
+void socketSendStatus(const int socket, workerDataPtr worker,
+		serverDataPtr server)
+{
+	xmlDocPtr doc = xmlDocCreate();
+	xmlNodePtr msgNode = xmlNodeCreateMsg();
+	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
+	xmlNodePtr serverNode = xmlNodeCreateServerData(server);
+	xmlDocSetRootElement(doc, msgNode);
+	xmlAddChild(msgNode, workerNode);
+	xmlAddChild(msgNode, serverNode);
+	if(worker->status != STATUS_IDLE)
+	{
+		size_t i;
+		for(i = 0; i < worker->processes; ++i)
+		{
+			processDataPtr process = (processDataPtr)worker->processesData[i];
+			if(process->status == PROCSTATUS_IDLE)
+				continue;
+			xmlNodePtr processNode = xmlNodeCreateProcessData(process, false);
+			xmlAddChild(msgNode, processNode);
+		}
+	}
+	size_t bytesSent = socketSend(socket, &server->address, doc);
+	xmlFreeDoc(doc);
+	if(bytesSent == 0)
+		fprintf(stderr, "ERROR: no status sent\n");
+}
+
+bool receivedPrimeRanges(workerDataPtr worker, listPtr ranges)
+{
+	bool result = false;
+	if(listLength(ranges) > 0/*== worker->processes*/)
+	{
+		// received new orders
+		size_t index = 0;
+		listElemPtr elem;
+		for(elem = listElemGetFirst(ranges); elem; elem = elem->next)
+		{
+			processDataPtr range = (processDataPtr)elem->val;
+			processDataPtr myProcess = worker->processesData[index];
+			time(&myProcess->started);
+			myProcess->primeFrom = range->primeFrom;
+			myProcess->primeTo = range->primeTo;
+			myProcess->primeRange = range->primeRange;
+			myProcess->status = PROCSTATUS_COMPUTING;
+			invokePrimesGenerator(myProcess);
+			++index;
+			freeProcessData(range);
+		}
+		if(index < worker->processes)
+		{
+			// set remaining processes to stubs
+			for(;index < worker->processes; ++index)
+			{
+				processDataPtr myProcess = worker->processesData[index];
+				myProcess->primeFrom = 0;
+				myProcess->primeTo = 0;
+				myProcess->primeRange = 0;
+				myProcess->status = PROCSTATUS_IDLE;
+			}
+			//fprintf(stderr, "ERROR: not all processes launched\n");
+		}
+
+		worker->status = STATUS_GENERATING;
+		result = true;
+	}
+	else
+		fprintf(stderr, "ERROR: incorrect number of processes\n");
+	return result;
+}
+
+bool receivedConfirmation(workerDataPtr worker, listPtr processesList)
+{
+	bool result = false;
+	bool movedPrimes = false;
+	size_t i;
+	listElemPtr elem;
+	for(elem = processesList->first; elem; elem = elem->next)
+	{
+		processDataPtr process = (processDataPtr)elem->val;
+		for(i = 0; i < worker->processes; ++i)
+		{
+			processDataPtr myProcess = worker->processesData[i];
+			if(process->primeFrom == myProcess->primeFrom
+				&& process->primeTo == myProcess->primeTo)
+			{
+				if(myProcess->confirmed == NULL)
+					myProcess->confirmed = listCreate();
+				moveConfirmedPrimes(myProcess->primes,
+					myProcess->confirmed, process->primes);
+				movedPrimes = true;
+				if(myProcess->status == PROCSTATUS_UNCONFIRMED
+					&& listLength(myProcess->primes) == 0)
+					myProcess->status = PROCSTATUS_CONFIRMED;
+				break;
+			}
+		}
+	}
+	if(updateStatusIfConfirmedAll(worker))
+		printf("P%d: All results were confirmed.\n", getpid());
+	if(movedPrimes)
+		result = true;
+	else
+		fprintf(stderr, "ERROR: did not move any primes\n");
+	return result;
 }
 
 // start a new process that will generate primes
@@ -609,19 +708,11 @@ void invokePrimesGenerator(processDataPtr process)
 	if(pid == 0)
 	{
 		generatePrimes(process);
-
-		//if(TEMP_FAILURE_RETRY(close(pipe)))
-		//	ERR("close");
-
-		//printf("closed pipe\n");
-
 		//sleep(60);
 		//printf("exit!\n");
-
 		listFree(process->primes);
 		listFree(process->confirmed);
 		freeProcessData(process);
-
 		exitNormal();
 	}
 }
@@ -657,11 +748,15 @@ void generatePrimes(processDataPtr process)
 		pid, process->primeFrom, process->primeTo);
 	int64_t i = process->primeFrom;
 	int64_t checked = 0;
+	int64_t discovered = 0;
 	if(i <= process->primeTo)
 		while(true)
 		{
 			if(isPrime(i))
+			{
 				listElemInsertEndPrime(process->primes, i);
+				++discovered;
+			}
 			++checked;
 			++n;
 
@@ -669,17 +764,22 @@ void generatePrimes(processDataPtr process)
 			{
 				n = 0;
 				double percent = (100.0 * checked) / process->primeRange;
-				fprintf(stdout, "P%d: computing: %3.2f%% %lld/%lld\n",
-					pid, percent, checked, process->primeRange);
+				fprintf(stdout, "P%d: computing: %5.1f%% %8lld/%lld found %7lld primes\n",
+					pid, percent, checked, process->primeRange, discovered);
 			}
 
-			if(listLength(process->primes) >= 50)
+			if(listLength(process->primes) == 50)
 			{
 				outCount = primesToString(process->primes, out, BUFSIZE_MAX);
+				if(outCount >= BUFSIZE_MAX)
+					CERR("too many primes to write at once");
 				out[outCount++] = '\n';
+				out[outCount] = '\0';
 				bulk_write(process->pipeWrite, out, outCount);
 				listClear(process->primes);
 			}
+			else if(listLength(process->primes) > 50)
+				CERR("primes count larger than 50");
 			if(i == process->primeTo)
 				break;
 			++i;

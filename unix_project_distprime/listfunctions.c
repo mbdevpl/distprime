@@ -197,6 +197,14 @@ void listElemInsertEnd(listPtr list, data_type data)
 
 void listMerge(listPtr list1, listPtr list2)
 {
+#ifdef DEBUG_LISTFUNCTIONS
+	printf("listMerge");
+	//listPrintStatistics(list, stdout);
+	printf("1");
+	listPrintErrors(list1, stdout);
+	printf("2");
+	listPrintErrors(list2, stdout);
+#endif
 	if(listLength(list2) == 0)
 	{
 		// nothing
@@ -209,12 +217,32 @@ void listMerge(listPtr list1, listPtr list2)
 	}
 	else
 	{
+		//if(list1->last == NULL || list2->first == NULL)
+		//{
+		//	listPrintStatistics(list1, stdout);
+		//	listPrintStatistics(list2, stdout);
+		//	printf(" - lists not ready!\n");
+		//}
 		list1->last->next = list2->first;
 		list2->first->prev = list1->last;
+		list1->last = list2->last;
 		list1->len += list2->len;
 	}
 	if(list2 != NULL)
+	{
+		list2->first = NULL;
+		list2->last = NULL;
+		list2->len = 0;
 		free(list2);
+	}
+#ifdef DEBUG_LISTFUNCTIONS
+	//listPrintStatistics(list, stdout);
+	printf("1");
+	listPrintErrors(list1, stdout);
+	printf("2");
+	listPrintErrors(list2, stdout);
+	printf("\n");
+#endif
 }
 
 void listElemRemoveLast(listPtr list)
@@ -226,39 +254,43 @@ void listElemRemoveLast(listPtr list)
 	{
 		list->first = NULL;
 		list->last = NULL;
-		list->len = 0;
 	}
 	else
 	{
 		list->last = list->last->prev;
 		list->last->next = NULL;
-		list->len -= 1;
 	}
+	list->len -= 1;
 	free(temp->val);
 	free(temp);
 }
 
-void listElemDetach(listPtr list, listElemPtr elem)
+int listElemDetach(listPtr list, listElemPtr elem)
 {
 	if(listLength(list) == 0 || elem == NULL)
-		return;
-
+		return 0;
+#ifdef DEBUG_LISTFUNCTIONS
+	printf("listElemDetach");
+	//listPrintStatistics(list, stdout);
+	listPrintErrors(list, stdout);
+#endif
 	if(elem == list->last)
-		list->last = elem->prev;
+		list->last = list->last->prev;
 	if(elem == list->first)
-		list->first = elem->next;
+		list->first = list->first->next;
 	if(elem->prev)
 		elem->prev->next = elem->next;
 	if(elem->next)
 		elem->next->prev = elem->prev;
-
 	list->len -= 1;
-
-//	if(list->len == 0)
-//	{
-//		list->first = NULL;
-//		list->last = NULL;
-//	}
+	elem->prev = NULL;
+	elem->next = NULL;
+#ifdef DEBUG_LISTFUNCTIONS
+	//listPrintStatistics(list, stdout);
+	listPrintErrors(list, stdout);
+	printf("\n");
+#endif
+	return 1;
 }
 
 void listClear(listPtr list)
@@ -294,6 +326,7 @@ listElemPtr listElemGetFirst(listPtr list)
 
 listElemPtr listElemGet(listPtr list, size_t index)
 {
+	printf("listElemGet()\n");
 	if(list == NULL || index < 0 || index >= list->len)
 		return NULL;
 	if(index == 0)
@@ -334,7 +367,8 @@ void listElemMove(listElemPtr elem, listPtr from, listPtr to)
 	if(elem == NULL || from == NULL || to == NULL)
 		return;
 
-	listElemDetach(from, elem);
+	if(!listElemDetach(from, elem))
+		return;
 
 	if(to->len > 0)
 	{
@@ -344,11 +378,9 @@ void listElemMove(listElemPtr elem, listPtr from, listPtr to)
 	}
 	else
 	{
-		elem->prev = NULL;
 		to->first = elem;
 		to->last = elem;
 	}
-	elem->next = NULL;
 	to->len += 1;
 }
 
@@ -362,12 +394,77 @@ void listPrint(listPtr list, FILE* f)
 	listElemPtr temp;
 	for(temp=list->first;temp;)
 	{
-		fprintf(f, "%d", (int)temp->val); // DATA_TYPE_FORMAT
+		fprintf(f, "%d", (int)temp->val); // todo DATA_TYPE_FORMAT
 		if((temp = temp->next) && (temp != list->first))
 			fprintf(f, ", ");
 		if(temp == list->first)
 			return;
 	}
+}
+
+void listPrintStatistics(listPtr list, FILE* f)
+{
+	fprintf(f, "[list %u", (size_t)list);
+	if(list != NULL)
+	{
+		fprintf(f, " first=%u", (size_t)list->first);
+		fprintf(f, " last=%u", (size_t)list->last);
+		fprintf(f, " len=%u", list->len);
+	}
+	fprintf(f, "]");
+}
+
+void listPrintErrors(listPtr list, FILE* f)
+{
+	fprintf(f, "[");
+	if(list != NULL)
+	{
+		if(list->len == 0)
+		{
+			if(list->first != NULL || list->last != NULL)
+				fprintf(f, "len=0 but elements exist");
+		}
+		else
+		{
+			if(list->first == NULL || list->last == NULL)
+				fprintf(f, "len=%u but elements missing", list->len);
+			else
+			{
+				size_t i = 0;
+				listElemPtr e;
+				for(e=list->first;e;)
+				{
+					if(e == list->first)
+					{
+						if(e->prev > 0)
+							fprintf(f, ";first elem has prev");
+					}
+					else
+					{
+						if(e->prev == NULL)
+							fprintf(f, ";%u prev is null", i);
+					}
+
+					if(e == list->last)
+					{
+						if(e->next > 0)
+							fprintf(f, ";%u last elem has next", i);
+					}
+					else
+					{
+						if(e->next == NULL)
+							fprintf(f, ";%u next is null", i);
+					}
+					e = e->next;
+					if(e == list->first)
+						return;
+					++i;
+				}
+			}
+		}
+	}
+	else fprintf(f, "null");
+	fprintf(f, "]");
 }
 
 /*
