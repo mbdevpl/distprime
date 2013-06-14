@@ -42,7 +42,7 @@ void printWorkerData(workerDataPtr data)
 	printf("address=%s:%d", inet_ntoa(data->address.sin_addr),
 		ntohs(data->address.sin_port));
 	printf(" hash=%u id=%u", data->hash, data->id);
-	printf(" processes=%u", data->processes);
+	printf(" processes=%zu", data->processes);
 	//printf(" primes=[%lld,%lld]", data->primeFrom, data->primeTo);
 
 	char temp[32];
@@ -71,7 +71,7 @@ xmlNodePtr xmlNodeCreateWorkerData(workerDataPtr worker)
 	xmlNewProp(node, XMLCHARS "id", XMLCHARS temp);
 
 	memset(temp, '\0', 32 * sizeof(char));
-	sprintf(temp, "%u", worker->processes);
+	sprintf(temp, "%zu", worker->processes);
 	//itoa(worker->processes, temp);
 	xmlNewProp(node, XMLCHARS "processes", XMLCHARS temp);
 

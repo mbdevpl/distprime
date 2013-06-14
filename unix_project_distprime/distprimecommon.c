@@ -180,7 +180,7 @@ int processXml(xmlDocPtr doc, serverDataPtr* server, workerDataPtr* worker,
 	listElemPtr elemType = listElemGetFirst(contentTypes);
 	while(elemType)
 	{
-		switch((int)elemType->val)
+		switch((long int)elemType->val)
 		{
 		case MSGPART_PROCESSDATA:
 			{

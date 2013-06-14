@@ -32,28 +32,28 @@ void printProcessData(processDataPtr process)
 	if(process == NULL)
 		return;
 	char temp[32];
-	printf("prmieRange=[%lld,%lld] |primeRange|=%lld",
+	printf("prmieRange=[%" PRId64 ",%" PRId64 "] |primeRange|=%" PRId64 "",
 		process->primeFrom, process->primeTo, process->primeRange);
 	if(listLength(process->primes) > 0)
 	{
-		printf(" |primes|=%u", listLength(process->primes));
+		printf(" |primes|=%zu", listLength(process->primes));
 		printf(" primes={");
 		listElemPtr elem;
 		for(elem = listElemGetFirst(process->primes); elem; elem = elem->next)
 		{
-			printf("%llu", valueToPrime(elem->val));
+			printf("%" PRId64 "", valueToPrime(elem->val));
 			if(elem->next) printf(",");
 		}
 		printf("}");
 	}
 	if(listLength(process->confirmed) > 0)
 	{
-		printf(" |confirmed|=%u", listLength(process->primes));
+		printf(" |confirmed|=%zu", listLength(process->primes));
 		printf(" confirmed={");
 		listElemPtr elem;
 		for(elem = listElemGetFirst(process->primes); elem; elem = elem->next)
 		{
-			printf("%llu", valueToPrime(elem->val));
+			printf("%" PRId64 "", valueToPrime(elem->val));
 			if(elem->next) printf(",");
 		}
 		printf("}");
@@ -75,12 +75,12 @@ xmlNodePtr xmlNodeCreateProcessData(processDataPtr process, bool includePrimes)
 	char temp[32];
 
 	memset(temp, '\0', 32 * sizeof(char));
-	sprintf(temp, "%llu", process->primeFrom);
+	sprintf(temp, "%" PRId64 "", process->primeFrom);
 	//lltoa(process->primesFrom, temp);
 	xmlNewProp(node, XMLCHARS "primeFrom", XMLCHARS temp);
 
 	memset(temp, '\0', 32 * sizeof(char));
-	sprintf(temp, "%llu", process->primeTo);
+	sprintf(temp, "%" PRId64 "", process->primeTo);
 	//lltoa(process->primesTo, temp);
 	xmlNewProp(node, XMLCHARS "primeTo", XMLCHARS temp);
 
@@ -91,7 +91,7 @@ xmlNodePtr xmlNodeCreateProcessData(processDataPtr process, bool includePrimes)
 	if(includePrimes && listLength(process->primes) > 0)
 	{
 		memset(temp, '\0', 32 * sizeof(char));
-		sprintf(temp, "%u", listLength(process->primes));
+		sprintf(temp, "%zu", listLength(process->primes));
 		xmlNewProp(node, XMLCHARS "primesCount", XMLCHARS temp);
 
 		char buf[BUFSIZE_MAX];
@@ -113,7 +113,7 @@ xmlNodePtr xmlNodeCreateProcessDataAltered(processDataPtr process,
 		char temp[32];
 
 		memset(temp, '\0', 32 * sizeof(char));
-		sprintf(temp, "%u", fakePrimesCount);
+		sprintf(temp, "%zu", fakePrimesCount);
 		xmlNewProp(node, XMLCHARS "primesCount", XMLCHARS temp);
 
 		char buf[BUFSIZE_MAX];
@@ -123,7 +123,7 @@ xmlNodePtr xmlNodeCreateProcessDataAltered(processDataPtr process,
 		for(i = 0; i < fakePrimesCount; ++i)
 		{
 			memset(temp, '\0', 32 * sizeof(char));
-			sprintf(temp, "%lld", fakePrimes[i]);
+			sprintf(temp, "%" PRId64 "", fakePrimes[i]);
 			size_t tempLen = strlen(temp);
 			strncpy(curr, temp, tempLen);
 			curr += tempLen;
@@ -226,7 +226,7 @@ size_t primesToString(listPtr primes, char* buffer, int bufferLen)
 		int64_t prime = valueToPrime(elem->val);
 		// copy prime to temporary buffer
 		memset(temp, '\0', 20 * sizeof(char));
-		sprintf(temp, "%llu", prime);
+		sprintf(temp, "%" PRId64 "", prime);
 		//lltoa(valueToPrime(elem->val), temp);
 		len = strnlen(temp, 21);
 		//printf("temp: %s\n", temp);

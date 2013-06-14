@@ -32,3 +32,4 @@ OTHER_FILES += \
 	Makefile \
 	readme.html \
 	testxml.xml \
+	compress.sh \

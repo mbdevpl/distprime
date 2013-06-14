@@ -194,15 +194,9 @@ int64_t findRangeEndLimited(/*serverDataPtr server, listPtr excludedRanges,
 #endif
 	if(rangeStart < 1 || rangeStart > rangeLimit)
 	{
-		fprintf(stderr, "ERROR: prime range start %lld is invalid, so range end cannot be found\n", rangeStart);
+		fprintf(stderr, "ERROR: prime range start %" PRId64 " is invalid, so range end cannot be found\n", rangeStart);
 		return 0LL;
 	}
-	//if(rangeStart == 1)
-	//{
-	//	if(FIRSTLIMIT > rangeLimit)
-	//		return rangeLimit;
-	//	return FIRSTLIMIT;
-	//}
 
 	// time needed to generate primes from range [a,b] is equal
 	// integral(sqrt(b))-integral(sqrt(a))
@@ -276,13 +270,23 @@ int64_t findRangeEndLimited(/*serverDataPtr server, listPtr excludedRanges,
 	if(rangeEnd < 0)
 		rangeEnd = 0;
 
-if(rangeStart < FIRSTLIMIT)
-{
-	double ratio = (FIRSTLIMIT-rangeStart)+FIRSTLIMIT/2;
-	ratio /= (FIRSTLIMIT+FIRSTLIMIT);
-	ratio *= rangeEnd;
-	rangeEnd = (int64_t)llround(ratio);
-}
+	// first fragments are multiplied by a ratio that is between 0.0 and 1.0,
+	// to lower the enormous amount of UDP packets sent
+	if(rangeStart < FIRSTLIMIT)
+	{
+		double ratio = (FIRSTLIMIT-rangeStart)+FIRSTLIMIT/4;
+		ratio /= (FIRSTLIMIT+FIRSTLIMIT);
+		ratio *= rangeEnd;
+		rangeEnd = (int64_t)llround(ratio);
+	}
+
+	// first fragments must have width at most 50k
+	if(rangeStart < FIRSTLIMIT && rangeEnd > 50000)
+		rangeEnd = 50000;
+
+	double primecountEstimate = (double)1.0 / (log(rangeStart)-1) * rangeEnd;
+	if(primecountEstimate > 15000)
+		rangeEnd = 300000;
 
 	if(rangeEnd > rangeLimit - rangeStart)
 		rangeEnd = rangeLimit;
@@ -380,7 +384,7 @@ void testPrimeRanges()
 	{
 		j = findRangeEndLimited(i, INT64_MAX);
 		k = j - i + 1;
-		printf("[%19lld,%19lld] %8lld\n", i, j, k);
+		printf("[%19" PRId64 ",%19" PRId64 "] %8" PRId64 "\n", i, j, k);
 		if(i >= 900000000000000000LL)
 			break;
 	}
@@ -396,7 +400,7 @@ void testPrimeRanges()
 	{
 		j = findRangeEndLimited(i, INT64_MAX);
 		k = j - i + 1;
-		printf("[%19lld,%19lld] %8lld\n", i, j, k);
+		printf("[%19" PRId64 ",%19" PRId64 "] %8" PRId64 "\n", i, j, k);
 		if(i >= 900000000000000000LL)
 			break;
 	}
@@ -404,7 +408,7 @@ void testPrimeRanges()
 	{
 		j = findRangeEndLimited(i, INT64_MAX);
 		k = j - i + 1;
-		printf("[%19lld,%19lld] %8lld\n", i, j, k);
+		printf("[%19" PRId64 ",%19" PRId64 "] %8" PRId64 "\n", i, j, k);
 		if(j == INT64_MAX)
 			break;
 		i = j + 1;

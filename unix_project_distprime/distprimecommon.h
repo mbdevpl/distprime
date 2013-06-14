@@ -7,6 +7,8 @@
 #include "workerdata.h"
 #include "serverdata.h"
 
+#define SERVER_PORT ((in_port_t)2000)
+
 void addressCreate(struct sockaddr_in* address, uint32_t ip, in_port_t port);
 void socketCreate(int* socket, int timeoutSeconds, bool broadcastEnable,
 		bool reuseAddress);

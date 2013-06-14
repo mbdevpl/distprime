@@ -386,7 +386,7 @@ void listPrint(listPtr list, FILE* f)
 	listElemPtr temp;
 	for(temp=list->first;temp;)
 	{
-		fprintf(f, "%d", (int)temp->val); // todo DATA_TYPE_FORMAT
+		fprintf(f, "%ld", (long int)temp->val); // todo DATA_TYPE_FORMAT
 		if((temp = temp->next) && (temp != list->first))
 			fprintf(f, ", ");
 		if(temp == list->first)
@@ -396,12 +396,12 @@ void listPrint(listPtr list, FILE* f)
 
 void listPrintStatistics(listPtr list, FILE* f)
 {
-	fprintf(f, "[list %u", (size_t)list);
+	fprintf(f, "[list %zu", (size_t)list);
 	if(list != NULL)
 	{
-		fprintf(f, " first=%u", (size_t)list->first);
-		fprintf(f, " last=%u", (size_t)list->last);
-		fprintf(f, " len=%u", list->len);
+		fprintf(f, " first=%zu", (size_t)list->first);
+		fprintf(f, " last=%zu", (size_t)list->last);
+		fprintf(f, " len=%zu", list->len);
 	}
 	fprintf(f, "]");
 }
@@ -419,7 +419,7 @@ void listPrintErrors(listPtr list, FILE* f)
 		else
 		{
 			if(list->first == NULL || list->last == NULL)
-				fprintf(f, "len=%u but elements missing", list->len);
+				fprintf(f, "len=%zu but elements missing", list->len);
 			else
 			{
 				size_t i = 0;
@@ -430,12 +430,12 @@ void listPrintErrors(listPtr list, FILE* f)
 					{
 						if(e->prev > 0) fprintf(f, ";first elem has prev");
 					}
-					else if(e->prev == NULL) fprintf(f, ";%u prev is null", i);
+					else if(e->prev == NULL) fprintf(f, ";%zu prev is null", i);
 					if(e == list->last)
 					{
-						if(e->next > 0) fprintf(f, ";%u last elem has next", i);
+						if(e->next > 0) fprintf(f, ";%zu last elem has next", i);
 					}
-					else if(e->next == NULL) fprintf(f, ";%u next is null", i);
+					else if(e->next == NULL) fprintf(f, ";%zu next is null", i);
 					e = e->next;
 					if(e == list->first)
 						return;

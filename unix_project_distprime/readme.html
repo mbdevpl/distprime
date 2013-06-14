@@ -16,8 +16,8 @@ This is free software, and it is available here:
 <h2>How to use</h2>
 
 <h3>Server</h3>
-To start the server at port 8765 (defined as <code>SERVER_PORT</code>
-in <code>distprimesever.c</code>), enter:<br /><br />
+To start the server at port defined as <code>SERVER_PORT</code>
+in <code>distprimecommon.h</code>, enter:<br /><br />
 
 <code>distprime 123400000000 123400500000 primes.log</code><br /><br />
 
@@ -28,7 +28,7 @@ and save results to <code>primes.log</code>.
 <h3>Worker</h3>
 To start worker program, enter:<br /><br />
 
-<code>distprimeworker 8765 4</code><br /><br />
+<code>distprimeworker 4</code><br /><br />
 
 This will launch a worker program that discovers primes in 4 processes in parallel,
 assuming that worker can discover server using UDP broadcast.
@@ -52,7 +52,9 @@ that follows.<br /><br />
 
 Each prime number can have at most 19 characters (assuming typical MAXINT_64 value),
 and 50 times 20 is 1000. After adding XML message overhead, we get around 1200 bytes.
-Typical MTU is around 1500, this means that in most cases the packet will not be fragmented.<br /><br />
+Typical MTU is around 1500, this means that in most cases the packet
+will not be fragmented. To change amount from 50 to some other value, change
+<code>PRIMEMAXCOUNT</code> value in <code>defines.h</code>.<br /><br />
 
 <h2>Example messages</h2>
 Please see <code>testxml.xml</code>.
@@ -71,7 +73,8 @@ There are various macros defined for testing the application,
 see source code for details. They are mostly located in <code>defines.h</code>.
 They are disabled by default.<br /><br />
 
-One of the macros simulates the situation in which there is a considerable packet loss, 20%.
+One of the macros simulates the situation in which there is
+a significant packet loss, 25%.
 
 </body>
 </html>

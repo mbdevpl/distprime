@@ -36,12 +36,12 @@ void printServerData(serverDataPtr server)
 		ntohs(server->address.sin_port));
 	printf(" hash=%u", server->hash);
 	if(server->primeFrom > 0 || server->primeTo > 0)
-		printf(" prmieRange=[%lld,%lld] |primeRange|=%lld",
+		printf(" prmieRange=[%" PRId64 ",%" PRId64 "] |primeRange|=%" PRId64 "",
 			server->primeFrom, server->primeTo, server->primeRange);
 	if(server->workersActive > 0 || server->processesDone > 0)
 	{
-		printf(" workersActive=%u", server->workersActive);
-		printf(" processesDone=%u", server->processesDone);
+		printf(" workersActive=%zu", server->workersActive);
+		printf(" processesDone=%zu", server->processesDone);
 	}
 	printf("\n");
 }

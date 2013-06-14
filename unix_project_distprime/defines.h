@@ -9,6 +9,9 @@
 #include <libxml/xmlmemory.h>
 #include <libxml/parser.h>
 
+#include <stdint.h>
+#include <inttypes.h>
+
 // prints contents of received network and pipe messages
 //#define DEBUG
 // prints byte counts sent/received from network/pipes
@@ -23,12 +26,14 @@
 //#define TEST_RETRY
 
 // buffers used for inner processing
-#define BUFSIZE_MAX PIPE_BUF//10240
+#define BUFSIZE_MAX PIPE_BUF //10240
 
 // max length of string with primes
 // (without taking other xml tags into account)
 // customize it to adjust to different MTU settings
 #define PRIMESPACKETSIZE_MAX 1000 // currently not used
+
+#define PRIMEMAXCOUNT 50
 
 #define XMLCHARS BAD_CAST
 #define CHARS (const char*)

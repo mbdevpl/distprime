@@ -1,8 +1,6 @@
 #include "distprimecommon.h"
 #include "primerange.h"
 
-#define SERVER_PORT ((in_port_t)8765)
-
 #define SERVER_SOCKET_TIMEOUT 1
 
 // after no communication occurs for given amount of time
@@ -36,6 +34,12 @@ bool socketRespondToPrimes(const int socket, serverDataPtr server,
 		workerDataPtr worker, listPtr processes);
 bool receivedStatus(serverDataPtr server, workerDataPtr worker);
 
+listPtr createNewPrimeRanges(serverDataPtr server, workerDataPtr worker);
+void movePrimeRangesToWorker(listPtr ranges, workerDataPtr worker);
+void removeConfirmedPrimes(listPtr list, listPtr confirmed);
+double calcProgress(serverDataPtr server);
+bool checkIfDone(serverDataPtr server);
+
 void writeHeader(const char* filename);
 void writeFooter(const char* filename);
 void savePrimes(listPtr list, const char* filename);
@@ -47,8 +51,397 @@ void usage()
 	fprintf(stderr, "  prime_to must not be smaller than prime_from\n");
 	fprintf(stderr, "  output_file must be a location with write permissions\n");
 	fprintf(stderr, "EXAMPLE:\n");
-	fprintf(stderr, "  distprime 2 %lld log.txt\n", INT64_MAX);
+	fprintf(stderr, "  distprime 2 %" PRId64 " log.txt\n", (int64_t)INT64_MAX);
 	exitNormal();
+}
+
+int main(int argc, char** argv)
+{
+	//testPrimeRanges();
+	//exitNormal();
+
+	printf("distprime\n");
+	printf("Distributed prime numbers discovery server\n\n");
+
+	if(argc != 4)
+		usage();
+	const int64_t primeFrom = (int64_t)atoll(argv[1]);
+	const int64_t primeTo = (int64_t)atoll(argv[2]);
+	char* outputFile = argv[3];
+	if(primeFrom < 1 || primeTo < 1 || primeFrom > primeTo || outputFile == NULL)
+		usage();
+
+	srand(getGoodSeed());
+
+	serverDataPtr server = allocServerData();
+
+	server->primeFrom = primeFrom;
+	server->primeTo = primeTo;
+	server->primeRange = primeTo - primeFrom + 1;
+	if(strncmp(outputFile, "/dev/null", 9) == 0)
+		server->outputPath = NULL; // disable text output (for testing)
+	else
+		server->outputPath = outputFile;
+	server->hash = rand()%9000000+1000000;
+
+	serverLoop(server);
+
+	freeServerData(server);
+
+	return EXIT_SUCCESS;
+}
+
+// TODO: maybe slightly too long
+void serverLoop(serverDataPtr myData)
+{
+	int socket;
+	struct sockaddr_in addrSender;
+	addressCreate(&myData->address, INADDR_ANY, SERVER_PORT);
+	socketCreate(&socket, SERVER_SOCKET_TIMEOUT, true, true);
+	socketBind(socket, &myData->address);
+	printf("Receiving on port %d.\n", SERVER_PORT);
+	time_t printed = 0, now;
+	writeHeader(myData->outputPath);
+	while(true)
+	{
+		time(&now);
+		checkAndPurgeInactiveWorkers(socket,  myData);
+		// receive xml from the socket
+		xmlDocPtr doc;
+		if(socketReceive(socket, &addrSender, &doc) > 0)
+		{
+			// parse xml into distprime objects
+			serverDataPtr server;
+			workerDataPtr worker;
+			listPtr processesList;
+			if(processXml(doc, &server, &worker, &processesList) < 0)
+				continue;
+
+			worker->address = addrSender;
+			handleMsg(socket, myData, server, worker, processesList);
+		}
+		if(doc != NULL)
+			xmlFreeDoc(doc);
+		bool allDone = checkIfDone(myData);
+		if(allDone || now - printed > 5)
+		{
+			// print progress information every 5 seconds
+			printf("Progress: %6.2f%% active workers: %2zu primes discovered: %8" PRId64 "\n",
+				calcProgress(myData), myData->workersActive, myData->primesCount);
+			time(&printed);
+		}
+		if(allDone)
+		{
+			printf("All primes were scanned.\n");
+			break;
+		}
+	}
+	writeFooter(myData->outputPath);
+	closeSocket(socket);
+	xmlCleanupParser();
+}
+
+//send status requests to clients that checked-in long ago
+void checkAndPurgeInactiveWorkers(const int socket, serverDataPtr myData)
+{
+	time_t now;
+	time(&now);
+	listElemPtr e;
+	for(e = listElemGetFirst(myData->workersActiveData); e;)
+	{
+		workerDataPtr active = (workerDataPtr)e->val;
+		time_t statusAge = now - active->statusSince;
+		// wait 3 seconds before checking up on the worker,
+		// and another 7 for response
+		if(statusAge >= PING_TIMEOUT)
+		{
+			// being deaf has consequences
+			listElemPtr temp = e;
+			e = e->next;
+			if(!listElemDetach(myData->workersActiveData, temp))
+				CERR("could not remove worker from active list");
+			myData->workersActive -= 1;
+			freeWorkerData(active);
+			free(temp);
+			printf("Kicked inactive worker.\n");
+			continue;
+		}
+		time_t nowDiff = now - active->now;
+		//printf("%ld-%ld=%ld\n", now, active->now, nowDiff);
+		if(nowDiff >= PING_SENDEVERY)
+		{
+			// it's time to send the ping
+			active->now = now;
+			socketSendStatusRequest(socket, myData, active);
+		}
+		e = e->next;
+	}
+}
+
+bool handleMsg(const int socket, serverDataPtr myData,
+		serverDataPtr server, workerDataPtr worker, listPtr processesList)
+{
+	bool msgHandled = false;
+	if(server == NULL)
+	{
+		if(worker != NULL)
+		{
+			if(worker->id == 0)
+				msgHandled = socketRespondToHandshake(socket, myData,
+						worker/*, workerIdSentLast*/);
+			else
+			{
+				if(listLength(processesList) > 0)
+					msgHandled = socketRespondToPrimes(socket, myData,
+							worker, processesList);
+				else
+				{
+					//respond to primes request
+					workerDataPtr active = matchActiveWorker(myData, worker);
+					if(active != NULL)
+						msgHandled = socketRespondToRequest(socket, myData, active);
+					else
+						fprintf(stderr, "WARNING: registered worker not found\n");
+				}
+			}
+			freeWorkerData(worker);
+			worker = NULL;
+		}
+		else
+			fprintf(stderr, "INFO: received message without worker data\n");
+	}
+	else
+	{
+		// received status message
+		msgHandled = receivedStatus(myData, worker);
+	}
+	if(!msgHandled)
+		fprintf(stderr, "ERROR: message was not handled\n");
+
+	if(worker != NULL)
+		freeWorkerData(worker);
+	if(server != NULL)
+		freeServerData(server);
+	return msgHandled;
+}
+
+void socketSendPrimeRanges(const int socket, serverDataPtr server,
+		workerDataPtr worker, listPtr ranges)
+{
+	xmlDocPtr doc = xmlDocCreate();
+	xmlNodePtr msgNode = xmlNodeCreateMsg();
+	xmlNodePtr serverNode = xmlNodeCreateServerData(server);
+	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
+	xmlDocSetRootElement(doc, msgNode);
+	xmlAddChild(msgNode, serverNode);
+	xmlAddChild(msgNode, workerNode);
+	listElemPtr elem;
+	for(elem = listElemGetFirst(ranges); elem; elem = elem->next)
+	{
+		processDataPtr process = (processDataPtr)elem->val;
+		xmlNodePtr processNode = xmlNodeCreateProcessData(process, false);
+		xmlAddChild(msgNode, processNode);
+	}
+	size_t bytesSent = socketSend(socket, &worker->address, doc);
+	xmlFreeDoc(doc);
+
+	if(bytesSent == 0)
+		fprintf(stderr, "ERROR: no primes range sent\n");
+}
+
+// sends confirmation about process, to the given worker, using given socket
+void socketSendConfirmation(const int socket, serverDataPtr server,
+		workerDataPtr worker, processDataPtr process)
+{
+	xmlDocPtr doc = xmlDocCreate();
+	xmlNodePtr msgNode = xmlNodeCreateMsg();
+	xmlNodePtr serverNode = xmlNodeCreateServerData(server);
+	//xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
+	xmlNodePtr processNode = xmlNodeCreateProcessData(process, true);
+	xmlDocSetRootElement(doc, msgNode);
+	xmlAddChild(msgNode, serverNode);
+	//xmlAddChild(msgNode, workerNode);
+	xmlAddChild(msgNode, processNode);
+	size_t bytesSent = socketSend(socket, &worker->address, doc);
+	xmlFreeDoc(doc);
+	if(bytesSent == 0)
+		fprintf(stderr, "ERROR: no confirmation sent\n");
+}
+
+void socketSendStatusRequest(const int socket, serverDataPtr server,
+		workerDataPtr worker)
+{
+	xmlDocPtr doc = xmlDocCreate();
+	xmlNodePtr msgNode = xmlNodeCreateMsg();
+	xmlNodePtr serverNode = xmlNodeCreateServerData(server);
+	xmlDocSetRootElement(doc, msgNode);
+	xmlAddChild(msgNode, serverNode);
+
+	size_t bytesSent = socketSend(socket, &worker->address, doc);
+	xmlFreeDoc(doc);
+	if(bytesSent == 0)
+		fprintf(stderr, "ERROR: no request sent\n");
+}
+
+bool socketRespondToHandshake(const int socket, serverDataPtr server,
+		workerDataPtr worker/*, unsigned int workerIdSentLast*/)
+{
+	bool result = false;
+	if(worker->processes == 0)
+	{
+		fprintf(stderr, "INFO: worker does not want to work\n");
+		return true;
+	}
+	listPtr ranges = createNewPrimeRanges(server, worker);
+	if(listLength(ranges) > 0/*== worker->processes*/)
+	{
+		// received broadcast
+		workerDataPtr newWorker = allocWorkerData();
+		newWorker->address = worker->address;
+		newWorker->hash = worker->hash;
+		server->workerIdSentLast += 1; //++workerIdSentLast;
+		newWorker->id = server->workerIdSentLast; //workerIdSentLast;
+		newWorker->processes = worker->processes; //listLength(ranges) wrong
+		newWorker->processesData =
+			(processDataPtr*)malloc(newWorker->processes * sizeof(processDataPtr));
+		newWorker->status = STATUS_GENERATING;
+		time(&newWorker->now);
+		newWorker->statusSince = newWorker->now;
+		movePrimeRangesToWorker(ranges, newWorker);
+		server->workersActive += 1;
+		listElemInsertEnd(server->workersActiveData, (data_type)newWorker);
+		socketSendPrimeRanges(socket, server, newWorker, ranges);
+		result = true;
+	}
+	else if(listLength(ranges) == 0)
+	{
+		// received broadcast, but all prime ranges are allocated
+		result = true;
+	}
+	//else
+	//	fprintf(stderr, "ERROR: wrong number of prime ranges to send\n");
+	listFree(ranges);
+	return result;
+}
+
+bool socketRespondToRequest(const int socket, serverDataPtr server,
+		workerDataPtr worker)
+{
+	bool result = false;
+	// cleanup after previous round, save primes to HDD
+	size_t i;
+	for(i = 0; i < worker->processes; ++i)
+	{
+		processDataPtr activeProcess = worker->processesData[i];
+		if(activeProcess == NULL)
+			continue;
+		if(activeProcess->status < PROCSTATUS_UNCONFIRMED)
+			return true; //CERR("worker not ready");
+		activeProcess->status = PROCSTATUS_CONFIRMED;
+		time(&activeProcess->finished);
+		// move process from active client to "done" list
+		listElemInsertEnd(server->processesDoneData, (data_type)activeProcess);
+		server->processesDone += 1;
+		size_t len = listLength(activeProcess->confirmed);
+		server->primesCount += len;
+		// save all primes to text file, and increase counter
+		if(len > 0)
+			savePrimes(activeProcess->confirmed, server->outputPath);
+		listClear(activeProcess->confirmed);
+		worker->processesData[i] = NULL;
+	}
+	// received subsequent request
+	listPtr ranges = createNewPrimeRanges(server, worker);
+	if(listLength(ranges) > 0/*== worker->processes*/)
+	{
+		// received prime range request
+		worker->status = STATUS_GENERATING;
+		time(&worker->now);
+		worker->statusSince = worker->now;
+		movePrimeRangesToWorker(ranges, worker);
+		socketSendPrimeRanges(socket, server, worker, ranges);
+		result = true;
+	}
+	else if(listLength(ranges) == 0)
+		result = true; // received request, but all prime ranges are allocated
+	listFree(ranges);
+	return result;
+}
+
+// TODO: maybe slightly too long
+bool socketRespondToPrimes(const int socket, serverDataPtr server,
+		workerDataPtr worker, listPtr processes)
+{
+	// received a list of primes
+	bool sentConfirmation = false;
+	workerDataPtr active = matchActiveWorker(server, worker);
+	if(active == NULL)
+		return true;
+	listElemPtr e;
+	for(e = listElemGetFirst(processes); e; e = e->next)
+	{
+		processDataPtr proc = (processDataPtr)e->val;
+		if(sentConfirmation)
+		{
+			freeProcessData(proc);
+			continue;
+		}
+		size_t i;
+		for(i = 0; i < active->processes; ++i)
+		{
+			processDataPtr activeProcess = active->processesData[i];
+			if(activeProcess == NULL)
+				continue;
+			else if(activeProcess->primeFrom == proc->primeFrom
+					&& activeProcess->primeTo == proc->primeTo)
+			{
+				// received a list of primes from an active worker
+				// send confirmation
+				socketSendConfirmation(socket, server, active, proc);
+				sentConfirmation = true;
+				// update status only if it indicates progress
+				if(proc->status > activeProcess->status)
+					activeProcess->status = proc->status;
+				time(&worker->now);
+				worker->statusSince = worker->now;
+				if(activeProcess->confirmed == NULL)
+					activeProcess->confirmed = proc->primes;
+				else
+				{
+					// resolve duplicates
+					removeConfirmedPrimes(proc->primes, activeProcess->confirmed);
+					listMerge(activeProcess->confirmed, proc->primes);
+				}
+				proc->primes = NULL;
+			}
+			if(sentConfirmation)
+				break;
+		}
+		freeProcessData(proc);
+	}
+
+	if(sentConfirmation)
+		return true;
+	fprintf(stderr, "ERROR: did not send any confirmation\n");
+	return false;
+}
+
+bool receivedStatus(serverDataPtr server, workerDataPtr worker)
+{
+	bool result = false;
+	bool recognizedWorker = false;
+	workerDataPtr active = matchActiveWorker(server, worker);
+	if(active != NULL)
+	{
+		recognizedWorker = true;
+		active->status = worker->status;
+		time(&active->now);
+		active->statusSince = active->now;
+		result = true;
+	}
+	if(!recognizedWorker)
+		fprintf(stderr, "ERROR: received status message from unknown worker\n");
+	return result;
 }
 
 listPtr createNewPrimeRanges(serverDataPtr server, workerDataPtr worker)
@@ -160,462 +553,6 @@ bool checkIfDone(serverDataPtr server)
 	return false;
 }
 
-int main(int argc, char** argv)
-{
-	//testPrimeRanges();
-	//exitNormal();
-
-	printf("distprime\n");
-	printf("Distributed prime numbers discovery server\n\n");
-
-	if(argc != 4)
-		usage();
-	const int64_t primeFrom = (int64_t)atoll(argv[1]);
-	const int64_t primeTo = (int64_t)atoll(argv[2]);
-	char* outputFile = argv[3];
-	if(primeFrom < 1 || primeTo < 1 || primeFrom > primeTo || outputFile == NULL)
-		usage();
-
-	srand(getGoodSeed());
-
-	serverDataPtr server = allocServerData();
-
-	server->primeFrom = primeFrom;
-	server->primeTo = primeTo;
-	server->primeRange = primeTo - primeFrom + 1;
-	if(strncmp(outputFile, "/dev/null", 9) == 0)
-		server->outputPath = NULL; // disable text output (for testing)
-	else
-		server->outputPath = outputFile;
-	server->hash = rand()%9000000+1000000;
-
-	serverLoop(server);
-
-	freeServerData(server);
-
-	return EXIT_SUCCESS;
-}
-
-// TODO: TOO LONG
-void serverLoop(serverDataPtr myData)
-{
-	//unsigned int workerIdSentLast = 0;
-	int socket;
-	struct sockaddr_in addrSender;
-
-	addressCreate(&myData->address, INADDR_ANY, SERVER_PORT);
-	socketCreate(&socket, SERVER_SOCKET_TIMEOUT, true, true);
-	socketBind(socket, &myData->address);
-	printf("Receiving on port %d.\n", SERVER_PORT);
-
-	time_t printed = 0;
-	time_t now;
-	writeHeader(myData->outputPath);
-	while(true)
-	{
-		time(&now);
-		checkAndPurgeInactiveWorkers(socket,  myData);
-
-		// receive xml from the socket
-		xmlDocPtr doc;
-		if(socketReceive(socket, &addrSender, &doc) > 0)
-		{
-			// parse xml into distprime objects
-			serverDataPtr server;
-			workerDataPtr worker;
-			listPtr processesList;
-			if(processXml(doc, &server, &worker, &processesList) < 0)
-				continue;
-
-			worker->address = addrSender;
-			handleMsg(socket, myData, server, worker, processesList);
-		}
-
-		if(doc != NULL)
-			xmlFreeDoc(doc);
-
-
-		bool allDone = checkIfDone(myData);
-
-		if(allDone || now - printed > 5)
-		{
-			// print progress information every 5 seconds
-			printf("Progress: %6.2f%% active workers: %2u primes discovered: %8lld\n",
-				calcProgress(myData), myData->workersActive, myData->primesCount);
-			time(&printed);
-		}
-
-		if(allDone)
-		{
-			printf("All primes were scanned.\n");
-			break;
-		}
-	}
-	writeFooter(myData->outputPath);
-
-	closeSocket(socket);
-	xmlCleanupParser();
-}
-
-//send status requests to clients that checked-in long ago
-void checkAndPurgeInactiveWorkers(const int socket, serverDataPtr myData)
-{
-	time_t now;
-	time(&now);
-	listElemPtr e;
-	for(e = listElemGetFirst(myData->workersActiveData); e;)
-	{
-		workerDataPtr active = (workerDataPtr)e->val;
-		time_t statusAge = now - active->statusSince;
-		// wait 3 seconds before checking up on the worker,
-		// and another 7 for response
-		if(statusAge >= PING_TIMEOUT)
-		{
-			// being deaf has consequences
-			listElemPtr temp = e;
-			e = e->next;
-			if(!listElemDetach(myData->workersActiveData, temp))
-				CERR("could not remove worker from active list");
-			myData->workersActive -= 1;
-			freeWorkerData(active);
-			free(temp);
-			printf("Kicked inactive worker.\n");
-			continue;
-		}
-		time_t nowDiff = now - active->now;
-		//printf("%ld-%ld=%ld\n", now, active->now, nowDiff);
-		if(nowDiff >= PING_SENDEVERY)
-		{
-			// it's time to send the ping
-			active->now = now;
-			socketSendStatusRequest(socket, myData, active);
-		}
-		e = e->next;
-	}
-}
-
-bool handleMsg(const int socket, serverDataPtr myData,
-		serverDataPtr server, workerDataPtr worker, listPtr processesList)
-{
-	bool msgHandled = false;
-	if(server == NULL)
-	{
-		if(worker != NULL)
-		{
-			if(worker->id == 0)
-				msgHandled = socketRespondToHandshake(socket, myData,
-						worker/*, workerIdSentLast*/);
-			else
-			{
-				if(listLength(processesList) > 0)
-					msgHandled = socketRespondToPrimes(socket, myData,
-							worker, processesList);
-				else
-				{
-					//respond to primes request
-					workerDataPtr active = matchActiveWorker(myData, worker);
-					if(active != NULL)
-						msgHandled = socketRespondToRequest(socket, myData, active);
-					else
-						fprintf(stderr, "WARNING: registered worker not found\n");
-				}
-			}
-			freeWorkerData(worker);
-			worker = NULL;
-		}
-		else
-			fprintf(stderr, "INFO: received message without worker data\n");
-	}
-	else
-	{
-		// received status message
-		msgHandled = receivedStatus(myData, worker);
-	}
-	if(!msgHandled)
-		fprintf(stderr, "ERROR: message was not handled\n");
-
-	if(worker != NULL)
-		freeWorkerData(worker);
-	if(server != NULL)
-		freeServerData(server);
-	return msgHandled;
-}
-
-void socketSendPrimeRanges(const int socket, serverDataPtr server,
-		workerDataPtr worker, listPtr ranges)
-{
-	xmlDocPtr doc = xmlDocCreate();
-	xmlNodePtr msgNode = xmlNodeCreateMsg();
-	xmlNodePtr serverNode = xmlNodeCreateServerData(server);
-	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
-	xmlDocSetRootElement(doc, msgNode);
-	xmlAddChild(msgNode, serverNode);
-	xmlAddChild(msgNode, workerNode);
-	//size_t i, count = listLength(ranges);
-	//for(i = 0; i < count; ++i)
-	listElemPtr elem;
-	for(elem = listElemGetFirst(ranges); elem; elem = elem->next)
-	{
-		processDataPtr process = (processDataPtr)elem->val;
-		xmlNodePtr processNode = xmlNodeCreateProcessData(process, false);
-		xmlAddChild(msgNode, processNode);
-	}
-	size_t bytesSent = socketSend(socket, &worker->address, doc);
-	xmlFreeDoc(doc);
-
-	if(bytesSent == 0)
-		fprintf(stderr, "ERROR: no primes range sent\n");
-}
-
-// sends confirmation about process, to the given worker, using given socket
-void socketSendConfirmation(const int socket, serverDataPtr server,
-		workerDataPtr worker, processDataPtr process)
-{
-	xmlDocPtr doc = xmlDocCreate();
-	xmlNodePtr msgNode = xmlNodeCreateMsg();
-	xmlNodePtr serverNode = xmlNodeCreateServerData(server);
-	//xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
-	xmlNodePtr processNode = xmlNodeCreateProcessData(process, true);
-	xmlDocSetRootElement(doc, msgNode);
-	xmlAddChild(msgNode, serverNode);
-	//xmlAddChild(msgNode, workerNode);
-	xmlAddChild(msgNode, processNode);
-	size_t bytesSent = socketSend(socket, &worker->address, doc);
-	xmlFreeDoc(doc);
-	if(bytesSent == 0)
-		fprintf(stderr, "ERROR: no confirmation sent\n");
-}
-
-void socketSendStatusRequest(const int socket, serverDataPtr server,
-		workerDataPtr worker)
-{
-	xmlDocPtr doc = xmlDocCreate();
-	xmlNodePtr msgNode = xmlNodeCreateMsg();
-	xmlNodePtr serverNode = xmlNodeCreateServerData(server);
-	xmlDocSetRootElement(doc, msgNode);
-	xmlAddChild(msgNode, serverNode);
-
-	size_t bytesSent = socketSend(socket, &worker->address, doc);
-	xmlFreeDoc(doc);
-	if(bytesSent == 0)
-		fprintf(stderr, "ERROR: no request sent\n");
-}
-
-bool socketRespondToHandshake(const int socket, serverDataPtr server,
-		workerDataPtr worker/*, unsigned int workerIdSentLast*/)
-{
-	bool result = false;
-	if(worker->processes == 0)
-	{
-		fprintf(stderr, "INFO: worker does not want to work\n");
-		return true;
-	}
-	listPtr ranges = createNewPrimeRanges(server, worker);
-	if(listLength(ranges) > 0/*== worker->processes*/)
-	{
-		// received broadcast
-		workerDataPtr newWorker = allocWorkerData();
-		newWorker->address = worker->address;
-		newWorker->hash = worker->hash;
-		server->workerIdSentLast += 1; //++workerIdSentLast;
-		newWorker->id = server->workerIdSentLast; //workerIdSentLast;
-		newWorker->processes = worker->processes; //listLength(ranges) wrong
-		newWorker->processesData =
-			(processDataPtr*)malloc(newWorker->processes * sizeof(processDataPtr));
-		newWorker->status = STATUS_GENERATING;
-		time(&newWorker->now);
-		newWorker->statusSince = newWorker->now;
-		movePrimeRangesToWorker(ranges, newWorker);
-		server->workersActive += 1;
-		listElemInsertEnd(server->workersActiveData, (data_type)newWorker);
-		socketSendPrimeRanges(socket, server, newWorker, ranges);
-		result = true;
-	}
-	else if(listLength(ranges) == 0)
-	{
-		// received broadcast, but all prime ranges are allocated
-		result = true;
-	}
-	//else
-	//	fprintf(stderr, "ERROR: wrong number of prime ranges to send\n");
-	listFree(ranges);
-	return result;
-}
-
-// TODO: slightly too long
-bool socketRespondToRequest(const int socket, serverDataPtr server,
-		workerDataPtr worker)
-{
-	bool result = false;
-	// cleanup after previous round, save primes to HDD
-
-	size_t i;
-	for(i = 0; i < worker->processes; ++i)
-	{
-		processDataPtr activeProcess = worker->processesData[i];
-		if(activeProcess == NULL)
-			continue;
-		if(activeProcess->status < PROCSTATUS_UNCONFIRMED)
-			return true; //CERR("worker not ready");
-		activeProcess->status = PROCSTATUS_CONFIRMED;
-		time(&activeProcess->finished);
-		// move process from active client to "done" list
-		listElemInsertEnd(server->processesDoneData, (data_type)activeProcess);
-		server->processesDone += 1;
-		size_t len = listLength(activeProcess->confirmed);
-		server->primesCount += len;
-		// save all primes to text file, and increase counter
-		if(len > 0)
-			savePrimes(activeProcess->confirmed, server->outputPath);
-		listClear(activeProcess->confirmed);
-		worker->processesData[i] = NULL;
-	}
-	// received subsequent request
-	listPtr ranges = createNewPrimeRanges(server, worker);
-	if(listLength(ranges) > 0/*== worker->processes*/)
-	{
-		// received prime range request
-		worker->status = STATUS_GENERATING;
-		time(&worker->now);
-		worker->statusSince = worker->now;
-		movePrimeRangesToWorker(ranges, worker);
-		socketSendPrimeRanges(socket, server, worker, ranges);
-		result = true;
-	}
-	else if(listLength(ranges) == 0)
-	{
-		// received request, but all prime ranges are allocated
-		result = true;
-	}
-	//else
-	//	fprintf(stderr, "ERROR: wrong number of prime ranges to send\n");
-	listFree(ranges);
-	return result;
-}
-
-// TODO: TOO LONG !!!!
-bool socketRespondToPrimes(const int socket, serverDataPtr server,
-		workerDataPtr worker, listPtr processes)
-{
-	// received a list of primes
-	bool sentConfirmation = false;
-	workerDataPtr active = matchActiveWorker(server, worker);
-	if(active == NULL)
-	{
-		//fprintf(stderr, "ERROR: did not recognize worker\n");
-		return true;
-	}
-	listElemPtr e;
-	for(e = listElemGetFirst(processes); e; e = e->next)
-	{
-		processDataPtr proc = (processDataPtr)e->val;
-		if(sentConfirmation)
-		{
-			freeProcessData(proc);
-			continue;
-		}
-		size_t i;
-		for(i = 0; i < active->processes; ++i)
-		{
-			processDataPtr activeProcess = active->processesData[i];
-			if(activeProcess == NULL)
-			{
-				continue;
-				// find this process in server->processesDoneData
-//				processDataPtr done = matchProcess(proc, server->processesDoneData);
-//				if(done != NULL)
-//				{
-//					// send confirmation
-//					socketSendConfirmation(socket, server, active, done);
-//					sentConfirmation = true;
-//					// check if all new primes are in confirmed
-//					removeConfirmedPrimes(proc->primes, done->confirmed);
-//					if(listLength(proc->primes) > 0)
-//					{
-//						listPrintErrors(done->confirmed, stdout);
-//						listPrintErrors(proc->primes, stdout);
-//						listMerge(done->confirmed, proc->primes);
-//					}
-//					else
-//						listFree(proc->primes);
-//					proc->primes = NULL;
-//				}
-			}
-			else if(activeProcess->primeFrom == proc->primeFrom
-					&& activeProcess->primeTo == proc->primeTo)
-			{
-				// received a list of primes from an active worker
-				// send confirmation
-				socketSendConfirmation(socket, server, active, proc);
-				sentConfirmation = true;
-				//printf("sent confirm for %u primes", listLength(proc->primes));
-				// update status only if it indicates progress
-				if(proc->status > activeProcess->status)
-					activeProcess->status = proc->status;
-				time(&worker->now);
-				worker->statusSince = worker->now;
-//				// add new primes to the proper list
-//				if(activeProcess->primes == NULL)
-//					activeProcess->primes = proc->primes;
-//				else
-//					listMerge(activeProcess->primes, proc->primes);
-				if(activeProcess->confirmed == NULL)
-					activeProcess->confirmed = proc->primes;
-				else
-				{
-					// resolve duplicates
-					//listPrintStatistics(proc->primes, stdout);
-					removeConfirmedPrimes(proc->primes, activeProcess->confirmed);
-					//listPrintStatistics(proc->primes, stdout);
-					//printf("TESTU3\n");
-					//listPrintStatistics(activeProcess->confirmed, stdout);
-					listMerge(activeProcess->confirmed, proc->primes);
-					//listPrintStatistics(activeProcess->confirmed, stdout);
-					//printf("TESTU4\n");
-				}
-				proc->primes = NULL;
-//				// save all primes to text file, and increase counter
-//				{
-//					size_t len = listLength(activeProcess->primes);
-//					if(len > 0)
-//					{
-//						savePrimes(activeProcess->primes, server->outputPath);
-//						server->primesCount += len;
-//					}
-//				}
-				//activeProcess->primes = listCreate();
-
-			}
-			if(sentConfirmation)
-				break;
-		}
-		freeProcessData(proc);
-	}
-
-	if(sentConfirmation)
-		return true;
-	fprintf(stderr, "ERROR: did not send any confirmation\n");
-	return false;
-}
-
-bool receivedStatus(serverDataPtr server, workerDataPtr worker)
-{
-	bool result = false;
-	bool recognizedWorker = false;
-	workerDataPtr active = matchActiveWorker(server, worker);
-	if(active != NULL)
-	{
-		recognizedWorker = true;
-		active->status = worker->status;
-		time(&active->now);
-		active->statusSince = active->now;
-		result = true;
-	}
-	if(!recognizedWorker)
-		fprintf(stderr, "ERROR: received status message from unknown worker\n");
-	return result;
-}
-
 void writeHeader(const char* filename)
 {
 	if(filename == NULL)
@@ -666,7 +603,7 @@ void savePrimes(listPtr list, const char* filename)
 	listElemPtr temp = listElemGetFirst(list);
 	while(temp)
 	{
-		fprintf(file, " %lld", valueToPrime(temp->val));
+		fprintf(file, " %" PRId64 "", valueToPrime(temp->val));
 		temp = temp->next;
 	}
 	fprintf(file, "\n");
