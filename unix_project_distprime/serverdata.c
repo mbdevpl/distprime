@@ -7,7 +7,7 @@ serverDataPtr allocServerData()
 		ERR("malloc");
 
 	memset(&server->address, 0, sizeof(struct sockaddr_in));
-	server->hash = 0;
+	server->hash = 0ULL;
 	server->primeFrom = 0;
 	server->primeTo = 0;
 	server->primeRange = 0;
@@ -23,7 +23,12 @@ serverDataPtr allocServerData()
 
 void freeServerData(serverDataPtr server)
 {
+	listElemPtr e;
+	for(e = listElemGetFirst(server->workersActiveData); e; e = e->next)
+		if(e->val != NULL) freeWorkerData((workerDataPtr)e->val);
 	listFree(server->workersActiveData);
+	for(e = listElemGetFirst(server->processesDoneData); e; e = e->next)
+		if(e->val != NULL) freeProcessData((processDataPtr)e->val);
 	listFree(server->processesDoneData);
 	free(server);
 }
@@ -34,7 +39,7 @@ void printServerData(serverDataPtr server)
 		return;
 	printf("address=%s:%d", inet_ntoa(server->address.sin_addr),
 		ntohs(server->address.sin_port));
-	printf(" hash=%u", server->hash);
+	printf(" hash=%llu", server->hash);
 	if(server->primeFrom > 0 || server->primeTo > 0)
 		printf(" prmieRange=[%" PRId64 ",%" PRId64 "] |primeRange|=%" PRId64 "",
 			server->primeFrom, server->primeTo, server->primeRange);
@@ -52,14 +57,8 @@ xmlNodePtr xmlNodeCreateServerData(serverDataPtr server)
 
 	char temp[32];
 
-	//memset(temp, '\0', 32 * sizeof(char));
-	//sprintf(temp, "%u", server->workers);
-	//itoa(server->workers, temp);
-	//xmlNewProp(node, XMLCHARS "workers", XMLCHARS temp);
-
 	memset(temp, '\0', 32 * sizeof(char));
-	sprintf(temp, "%u", server->hash);
-	//itoa(server->hash, temp);
+	sprintf(temp, "%llu", server->hash);
 	xmlNewProp(node, XMLCHARS "hash", XMLCHARS temp);
 
 	return node;
@@ -68,25 +67,21 @@ xmlNodePtr xmlNodeCreateServerData(serverDataPtr server)
 serverDataPtr xmlNodeParseServerData(xmlNodePtr node)
 {
 	serverDataPtr server = allocServerData();
-
 	xmlAttrPtr attr = node->properties;
 	for(;attr;attr=attr->next)
 	{
 		const char* attrName = CHARS attr->name;
-		//if(strncmp(attrName, "workers", 8) == 0)
-		//	server->workersActive = strtoul(CHARS xmlNodeGetContent(attr->children), NULL, 10);
-		//else
+		xmlChar* content = xmlNodeGetContent(attr->children);
 		if(strncmp(attrName, "hash", 5) == 0)
-			server->hash = strtoul(CHARS xmlNodeGetContent(attr->children), NULL, 10);
+			server->hash = strtoull(CHARS content, NULL, 10);
+		if(content != NULL)
+			free(content);
 	}
+	if(server->hash >= HASH_MIN && server->hash <= HASH_MAX)
+		return server;
+	freeServerData(server);
+	return NULL;
 
-	if(server->hash < 1000000)
-	{
-		//freeServerData(server);
-		return NULL;
-	}
-
-	return server;
 }
 
 workerDataPtr matchActiveWorker(serverDataPtr server, workerDataPtr match)

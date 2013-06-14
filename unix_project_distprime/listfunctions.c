@@ -90,8 +90,7 @@ void listFree(listPtr list)
 		{
 			temp = head;
 			head = head->next;
-			free(temp->val);
-			free(temp);
+			listElemFree(temp);
 			if(head == list->first)
 				return;
 		}
@@ -113,7 +112,9 @@ listElemPtr listElemCreate(data_type data)
 
 void listElemFree(listElemPtr elem)
 {
-	free(elem->val);
+	// to free or not to free...
+	// because data_type is void*
+	//free(elem->val);
 	free(elem);
 }
 
@@ -228,7 +229,7 @@ void listMerge(listPtr list1, listPtr list2)
 		list2->first = NULL;
 		list2->last = NULL;
 		list2->len = 0;
-		free(list2);
+		listFree(list2);
 	}
 #ifdef DEBUG_LISTFUNCTIONS
 	printf("1"); listPrintErrors(list1, stdout);
@@ -253,8 +254,7 @@ void listElemRemoveLast(listPtr list)
 		list->last->next = NULL;
 	}
 	list->len -= 1;
-	free(temp->val);
-	free(temp);
+	listElemFree(temp);
 }
 
 int listElemDetach(listPtr list, listElemPtr elem)
@@ -297,8 +297,7 @@ void listClear(listPtr list)
 		{
 			temp = head;
 			head = head->next;
-			free(temp->val); // because data_type is void*
-			free(temp);
+			listElemFree(temp);
 			if(head == list->first)
 				return;
 		}
@@ -376,9 +375,8 @@ void listElemMove(listElemPtr elem, listPtr from, listPtr to)
 	to->len += 1;
 }
 
-//printing list on screen
-
-//prints the list's contents
+// prints the list's contents as a list of pointers
+// separated by comma-space ", "
 void listPrint(listPtr list, FILE* f)
 {
 	if(list == NULL || list->len < 1)
@@ -394,6 +392,8 @@ void listPrint(listPtr list, FILE* f)
 	}
 }
 
+// prints basic information about the list pointer: its address, list's length,
+// and pointers to first and last element
 void listPrintStatistics(listPtr list, FILE* f)
 {
 	fprintf(f, "[list %zu", (size_t)list);
@@ -406,6 +406,8 @@ void listPrintStatistics(listPtr list, FILE* f)
 	fprintf(f, "]");
 }
 
+// prints empty square brackets "[]" if there are no inconsistencies
+// in the list, or prints errors inside the brackets if there are any
 void listPrintErrors(listPtr list, FILE* f)
 {
 	fprintf(f, "[");
@@ -449,51 +451,7 @@ void listPrintErrors(listPtr list, FILE* f)
 	fprintf(f, "]");
 }
 
-/*
-//void listConnect(struct list**elem1,struct list**elem2,data_type n){
-//    struct list*newelem;
-//    newelem=createElem(n);
-//    if(*elem1){
-//        (*elem1)->next=newelem;
-//        newelem->next=(*elem2);
-//    }
-//    else{
-//        *elem1=newelem;
-//        (*elem1)->next=(*elem2);
-//    }
-//}
-
-//void insertEnd(struct list**head,data_type n){
-//    //adds new element at the end of the list
-//    struct list*newelem,*temp;
-//    if((temp=*head)){ //nonempty list
-//        newelem=createElem(n);
-//        for(;temp->next;) //until next is not null
-//            temp=temp->next; //go to the next elem.
-//        temp->next=newelem; //next of last becomes our new elem.
-//    }
-//    else insertFront(head,n); //list is empty
-//}
-
-//void removeFirst(struct list**head,data_type n){
-//    //removes the first occurence of value n from the list
-//    struct list*temp=*head;
-//    if(temp){
-//        if((temp->val)==n) head=NULL; //one elem, equal to n
-//        else if(temp->next){ //more then one elem
-//            for(;temp->next;){
-//                if((temp->next->val)==n){ //next elem. value equal to n
-//                    struct list *removed=temp->next; //remember next elem
-//                    temp->next=temp->next->next; //change pointer
-//                    free(removed); //remove former next elem
-//                    //and move to end, or more than one occur. will be remov.
-//                    for(;temp->next;) temp=temp->next;
-//                }else temp=temp->next;
-//            }
-//        } //else: nothing to remove, only one elem. and it is diffrent than n
-//    } //else: nothing to remove, because the list has no elements
-//}
-
+/*//
 //properties of lists
 
 //struct list* findlast(struct list**head){
@@ -581,40 +539,4 @@ void listPrintErrors(listPtr list, FILE* f)
 //        //prevhead=(currhead=min); //setting new currhead (after swap)
 //    }
 //}
-
-//void printLnList(struct list**head){
-//    //prints the list's contents and newline character
-//    printList(head);
-//    printf("\n");
-//}
-
-//void printLen(struct list**head){
-//    //prints the list's length
-//    struct list*temp;
-//    int counter=0;
-//    for(temp=*head;temp;temp=temp->next){
-//        counter++;
-//        if(temp->next==*head)break;
-//    }
-//    if(temp)if(temp->next==*head) printf("circle with ");
-//    printf("len=%i",counter);
-//}
-
-//void printLnLen(struct list**head){
-//    //prints the list's length and newline character
-//    printLen(head);
-//    printf("\n");
-//}
-//void printListAndLen(struct list**head){
-//    //prints the list's contents and its length
-//    printList(head);
-//    printf(", ");
-//    printLen(head);
-//}
-
-//void printLnListAndLen(struct list**head){
-//    //prints the list's contents, its length and newline character
-//    printListAndLen(head);
-//    printf("\n");
-//}
-*/
+//*/

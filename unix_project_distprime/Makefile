@@ -9,42 +9,42 @@ INCLUDES=-I/usr/include/libxml2
 all: server worker
 
 mbdev_unix.o: mbdev_unix.c mbdev_unix.h
-	gcc -Wall -c mbdev_unix.c
+	gcc -g -Wall -c mbdev_unix.c
 
 listfunctions.o: listfunctions.c listfunctions.h
-	gcc -Wall -c listfunctions.c
+	gcc -g -Wall -c listfunctions.c
 
 distprimecommon.o: distprimecommon.c distprimecommon.h processdata.h workerdata.h serverdata.h defines.h
-	gcc -Wall $(INCLUDES) -c distprimecommon.c
+	gcc -g -Wall $(INCLUDES) -c distprimecommon.c
 
 # structures
 processdata.o: processdata.c processdata.h
-	gcc -Wall $(INCLUDES) -c processdata.c
+	gcc -g -Wall $(INCLUDES) -c processdata.c
 
 workerdata.o: workerdata.c workerdata.h
-	gcc -Wall $(INCLUDES) -c workerdata.c
+	gcc -g -Wall $(INCLUDES) -c workerdata.c
 
 serverdata.o: serverdata.c serverdata.h
-	gcc -Wall $(INCLUDES) -c serverdata.c
+	gcc -g -Wall $(INCLUDES) -c serverdata.c
 
 # prime ranges
 primerange.o: primerange.c primerange.h
-	gcc -Wall $(INCLUDES) -c primerange.c
+	gcc -g -Wall $(INCLUDES) -c primerange.c
 
 # server
 distprimeserver.o: distprimeserver.c distprimecommon.h primerange.h
-	gcc -Wall $(INCLUDES) -c distprimeserver.c
+	gcc -g -Wall $(INCLUDES) -c distprimeserver.c
 
 # worker
 distprimeworker.o: distprimeworker.c distprimecommon.h
-	gcc -Wall $(INCLUDES) -c distprimeworker.c
+	gcc -g -Wall $(INCLUDES) -c distprimeworker.c
 
 server: mbdev_unix.o listfunctions.o processdata.o workerdata.o serverdata.o distprimecommon.o distprimeserver.o primerange.o
-	gcc -Wall $(INCLUDES) -o distprime mbdev_unix.o listfunctions.o processdata.o workerdata.o serverdata.o distprimecommon.o primerange.o distprimeserver.o -lm -lxml2
+	gcc -g -Wall $(INCLUDES) -o distprime mbdev_unix.o listfunctions.o processdata.o workerdata.o serverdata.o distprimecommon.o primerange.o distprimeserver.o -lm -lxml2
 #  $(LIBS)
 
 worker: mbdev_unix.o listfunctions.o processdata.o workerdata.o serverdata.o distprimecommon.o distprimeworker.o
-	gcc -Wall $(INCLUDES) -o distprimeworker mbdev_unix.o listfunctions.o processdata.o workerdata.o serverdata.o distprimecommon.o distprimeworker.o -lm -lxml2
+	gcc -g -Wall $(INCLUDES) -o distprimeworker mbdev_unix.o listfunctions.o processdata.o workerdata.o serverdata.o distprimecommon.o distprimeworker.o -lm -lxml2
 # $(LIBS)
 
 .PHONY: clean

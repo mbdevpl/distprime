@@ -32,21 +32,4 @@ size_t xmlToString(xmlDocPtr doc, char* buffer, const int bufferLen);
 int commGetMsgType(xmlDocPtr doc);
 int commGetMsgpartType(xmlNodePtr part);
 
-/*
-//void createSocketOut(int* socketOut, struct sockaddr_in* addr,
-//		uint32_t addressOut, in_port_t portOut);
-
-//void socketOutSend(const int socketOut, char* bufferOut, const int bufferLen,
-//		const struct sockaddr_in* addrOut, int* sentBytes);
-
-//void createSocketIn(int* socketIn, struct sockaddr_in* addr,
-//		uint32_t addressIn, in_port_t portIn, const int timeoutSeconds);
-
-//void socketInReceive(const int socketIn, char* bufferIn, const int bufferLen,
-//		struct sockaddr_in* addrSender, int* receivedBytes);
-
-//xmlNodePtr xmlNodeCreatePrimes(const int from, const int to,
-//		const int primesCount, const int64_t* primes);
-*/
-
 #endif // DISTPRIMECOMMON_H

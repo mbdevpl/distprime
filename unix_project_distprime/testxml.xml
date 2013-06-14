@@ -1,38 +1,61 @@
 <!-- this file contains example messages that are sent
 	between server and workers -->
 
-<!-- a handshake, sent from worker -->
+<!-- handshake, sent from worker -->
 <distprimemsg>
-  <worker processes="1" hash="236926" id="0" status="1" statusSince="2013/04/20 12:59.00" />
+  <worker processes="1" hash="236926" id="0" status="1" />
 </distprimemsg>
 
 <!-- response to a handshake, sent from server -->
 <distprimemsg>
   <server hash="9708909"/>
-  <worker processes="1" hash="236926" id="1" status="2" statusSince="2013/04/20 12:59.02" />
+  <worker processes="1" hash="236926" id="1" status="2" />
   <process primeFrom="2" primeTo="18" status="4" />
 </distprimemsg>
 
-<!-- partial results, sent from worker -->
+<!-- ordinary set of primes, sent from worker -->
 <distprimemsg>
-  <process primeFrom="2" primeTo="18" status="4" count="2">2,3</process>
-</distprimemsg>
-
-<!-- confirmation of the partial results, sent from server -->
-<distprimemsg>
-  <server hash="9708909"/>
+  <worker processes="1" hash="236926" id="1" status="2" />
   <process primeFrom="2" primeTo="18" status="4" primesCount="2">2,3</process>
 </distprimemsg>
 
-<!-- final batch of the results, sent from worker -->
+<!-- confirmation of ordinary set of primes, sent from server -->
 <distprimemsg>
+  <worker processes="1" hash="236926" id="1" status="2" />
+  <process primeFrom="2" primeTo="18" status="4" primesCount="2">2,3</process>
+</distprimemsg>
+
+<!-- final set of primes, sent from worker -->
+<distprimemsg>
+  <worker processes="1" hash="236926" id="1" status="2" />
   <process primeFrom="2" primeTo="18" status="5" primesCount="5">5,7,11,13,17</process>
 </distprimemsg>
 
-<!-- confirmation of the partial results, sent from server -->
+<!-- confirmation of final set of primes, sent from server -->
+<distprimemsg>
+  <worker processes="1" hash="236926" id="1" status="2" />
+  <process primeFrom="2" primeTo="18" status="5" primesCount="5">5,7,11,13,17</process>
+</distprimemsg>
+
+<!-- request for prime ranges, sent from worker -->
+<distprimemsg>
+  <worker processes="1" hash="236926" id="1" status="1" />
+</distprimemsg>
+
+<!-- prime ranges, sent from server -->
+<distprimemsg>
+  <worker processes="1" hash="236926" id="1" status="2" />
+  <process primeFrom="19" primeTo="40" status="4" />
+</distprimemsg>
+
+<!-- status request, sent from server -->
 <distprimemsg>
   <server hash="9708909"/>
-  <process primeFrom="2" primeTo="18" status="5" primesCount="5">5,7,11,13,17</process>
 </distprimemsg>
 
-<!-- <process primeFrom="9223372036854775000" primeTo="9223372036854775807" status="4" /> -->
+<!-- status, sent from worker -->
+<distprimemsg>
+  <server hash="9708909"/>
+  <worker processes="1" hash="236926" id="1" status="2" />
+  <process primeFrom="19" primeTo="40" status="4" />
+</distprimemsg>

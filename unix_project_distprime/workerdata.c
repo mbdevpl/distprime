@@ -20,17 +20,15 @@ workerDataPtr allocWorkerData()
 
 void freeWorkerData(workerDataPtr worker)
 {
-	worker->hash = 0;
+	worker->hash = 0ULL;
 	worker->id = 0;
 	if(worker->processesData != NULL)
 	{
 		size_t i;
 		for(i = 0; i < worker->processes; ++i)
-		{
-			if(worker->processesData[i] == NULL)
-				continue;
-			freeProcessData(worker->processesData[i]);
-		}
+			if(worker->processesData[i] != NULL)
+				freeProcessData(worker->processesData[i]);
+		free(worker->processesData);
 	}
 	free(worker);
 }
@@ -41,7 +39,7 @@ void printWorkerData(workerDataPtr data)
 		return;
 	printf("address=%s:%d", inet_ntoa(data->address.sin_addr),
 		ntohs(data->address.sin_port));
-	printf(" hash=%u id=%u", data->hash, data->id);
+	printf(" hash=%llu id=%u", data->hash, data->id);
 	printf(" processes=%zu", data->processes);
 	//printf(" primes=[%lld,%lld]", data->primeFrom, data->primeTo);
 
@@ -61,28 +59,22 @@ xmlNodePtr xmlNodeCreateWorkerData(workerDataPtr worker)
 	char temp[32];
 
 	memset(temp, '\0', 32 * sizeof(char));
-	sprintf(temp, "%u", worker->hash);
-	//ltoa(worker->hash, temp);
+	sprintf(temp, "%llu", worker->hash);
 	xmlNewProp(node, XMLCHARS "hash", XMLCHARS temp);
 
 	memset(temp, '\0', 32 * sizeof(char));
 	sprintf(temp, "%u", worker->id);
-	//itoa(worker->id, temp);
 	xmlNewProp(node, XMLCHARS "id", XMLCHARS temp);
 
 	memset(temp, '\0', 32 * sizeof(char));
 	sprintf(temp, "%zu", worker->processes);
-	//itoa(worker->processes, temp);
 	xmlNewProp(node, XMLCHARS "processes", XMLCHARS temp);
 
 	memset(temp, '\0', 32 * sizeof(char));
 	sprintf(temp, "%d", worker->status);
-	//itoa(worker->status, temp);
 	xmlNewProp(node, XMLCHARS "status", XMLCHARS temp);
 
-	//memset(temp, '\0', 32 * sizeof(char));
 	timeToString(&worker->statusSince, temp, 32);
-	//itoa(worker->statusSince, temp);
 	xmlNewProp(node, XMLCHARS "statusSince", XMLCHARS temp);
 
 	return node;
@@ -91,28 +83,31 @@ xmlNodePtr xmlNodeCreateWorkerData(workerDataPtr worker)
 workerDataPtr xmlNodeParseWorkerData(xmlNodePtr node)
 {
 	workerDataPtr worker = allocWorkerData();
-
 	xmlAttrPtr attr = node->properties;
 	for(;attr;attr=attr->next)
 	{
 		const char* attrName = CHARS attr->name;
+		xmlChar* content = xmlNodeGetContent(attr->children);
 		if(strncmp(attrName, "processes", 10) == 0)
-			worker->processes = strtoul(CHARS xmlNodeGetContent(attr->children), NULL, 10);
+			worker->processes = strtoul(CHARS content, NULL, 10);
 		else if(strncmp(attrName, "status", 7) == 0)
-			worker->status = atoi(CHARS xmlNodeGetContent(attr->children));
+			worker->status = atoi(CHARS content);
 		else if(strncmp(attrName, "statusSince", 12) == 0)
-			worker->statusSince = atoi(CHARS xmlNodeGetContent(attr->children));
+			worker->statusSince = atoi(CHARS content);
 		else if(strncmp(attrName, "hash", 5) == 0)
-			worker->hash = strtoul(CHARS xmlNodeGetContent(attr->children), NULL, 10);
+			worker->hash = strtoull(CHARS content, NULL, 10);
 		else if(strncmp(attrName, "id", 3) == 0)
-			worker->id = strtoul(CHARS xmlNodeGetContent(attr->children), NULL, 10);
+			worker->id = strtoul(CHARS content, NULL, 10);
+		if(content != NULL)
+			free(content);
 	}
+	if(worker->processes >= 1 && worker->hash >= HASH_MIN && worker->hash <= HASH_MAX)
+		return worker;
+	freeWorkerData(worker);
+	return NULL;
+}
 
-	if(worker->processes < 1 || worker->hash < 1000000)
-	{
-		freeWorkerData(worker);
-		return NULL;
-	}
-
-	return worker;
+unsigned long long getHash()
+{
+	return rand()%(HASH_MAX-HASH_MIN+1)+HASH_MIN;
 }

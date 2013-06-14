@@ -64,4 +64,7 @@
 // unique status reserved for situations when server requested less processes
 #define PROCSTATUS_IDLE 7
 
+#define HASH_MIN 1000000ULL
+#define HASH_MAX 9999999ULL
+
 #endif // DEFINES_H

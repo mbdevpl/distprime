@@ -60,7 +60,6 @@ void listTestAll();
 //creation or deletion of a whole list
 listPtr listCreate();
 //listPtr listCreate(data_type data);
-//listPtr listCreateRandom(size_t len, data_type min, data_type max);
 void listFree(listPtr list);
 
 //creation or deletion of elements
@@ -81,11 +80,6 @@ void listElemRemoveLast(listPtr list);
 int listElemDetach(listPtr list, listElemPtr elem);
 void listClear(listPtr list);
 
-//properties of lists
-//void listConnect(struct list**elem1,struct list**elem2,data_type n);
-//struct list* findlast(struct list**head);
-//struct list* findprev(struct list**head,struct list*elem);
-//struct list* smallest(struct list**head);
 
 listElemPtr listElemGetFirst(listPtr list);
 listElemPtr listElemGet(listPtr list, size_t index);
@@ -94,20 +88,17 @@ size_t listLength(listPtr list);
 
 //rearanging of elements
 void listElemMove(listElemPtr elem, listPtr from, listPtr to);
-//void reverseList(struct list**head);
-//void swap(struct list**head,struct list*elem1,struct list*elem2);
-//void selectionSort(struct list**head);
 
 void listPrint(listPtr list, FILE* f);
 void listPrintStatistics(listPtr list, FILE* f);
 void listPrintErrors(listPtr list, FILE* f);
 
-//printing elements on screen
-//void printList(struct list**head);
-//void printLnList(struct list**head);
-//void printLen(struct list**head);
-//void printLnLen(struct list**head);
-//void printListAndLen(struct list**head);
-//void printLnListAndLen(struct list**head);
+//listPtr listCreateRandom(size_t len, data_type min, data_type max);
+//struct list* findlast(struct list**head);
+//struct list* findprev(struct list**head,struct list*elem);
+//struct list* smallest(struct list**head);
+//void reverseList(struct list**head);
+//void swap(struct list**head,struct list*elem1,struct list*elem2);
+//void selectionSort(struct list**head);
 
 #endif // MBDEV_LISTFUNCTIONS_H

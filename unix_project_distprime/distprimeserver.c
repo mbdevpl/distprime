@@ -21,7 +21,7 @@ bool handleMsg(const int socket, serverDataPtr myData,
 		serverDataPtr server, workerDataPtr worker, listPtr processesList);
 
 void socketSendPrimeRanges(const int socket, serverDataPtr server,
-		workerDataPtr worker, listPtr ranges);
+		workerDataPtr worker);
 void socketSendConfirmation(const int socket, serverDataPtr server,
 		workerDataPtr worker, processDataPtr process);
 void socketSendStatusRequest(const int socket, serverDataPtr server,
@@ -82,12 +82,11 @@ int main(int argc, char** argv)
 		server->outputPath = NULL; // disable text output (for testing)
 	else
 		server->outputPath = outputFile;
-	server->hash = rand()%9000000+1000000;
+	server->hash = getHash();
 
 	serverLoop(server);
 
 	freeServerData(server);
-
 	return EXIT_SUCCESS;
 }
 
@@ -116,9 +115,16 @@ void serverLoop(serverDataPtr myData)
 			listPtr processesList;
 			if(processXml(doc, &server, &worker, &processesList) < 0)
 				continue;
-
 			worker->address = addrSender;
 			handleMsg(socket, myData, server, worker, processesList);
+			if(worker != NULL)
+				freeWorkerData(worker);
+			if(server != NULL)
+				freeServerData(server);
+			listElemPtr e;
+			for(e = listElemGetFirst(processesList); e; e = e->next)
+				freeProcessData((processDataPtr)e->val);
+			listFree(processesList);
 		}
 		if(doc != NULL)
 			xmlFreeDoc(doc);
@@ -161,7 +167,7 @@ void checkAndPurgeInactiveWorkers(const int socket, serverDataPtr myData)
 			if(!listElemDetach(myData->workersActiveData, temp))
 				CERR("could not remove worker from active list");
 			myData->workersActive -= 1;
-			freeWorkerData(active);
+			freeWorkerData(active); // ok!
 			free(temp);
 			printf("Kicked inactive worker.\n");
 			continue;
@@ -187,8 +193,7 @@ bool handleMsg(const int socket, serverDataPtr myData,
 		if(worker != NULL)
 		{
 			if(worker->id == 0)
-				msgHandled = socketRespondToHandshake(socket, myData,
-						worker/*, workerIdSentLast*/);
+				msgHandled = socketRespondToHandshake(socket, myData, worker);
 			else
 			{
 				if(listLength(processesList) > 0)
@@ -204,29 +209,19 @@ bool handleMsg(const int socket, serverDataPtr myData,
 						fprintf(stderr, "WARNING: registered worker not found\n");
 				}
 			}
-			freeWorkerData(worker);
-			worker = NULL;
 		}
 		else
 			fprintf(stderr, "INFO: received message without worker data\n");
 	}
 	else
-	{
-		// received status message
 		msgHandled = receivedStatus(myData, worker);
-	}
 	if(!msgHandled)
 		fprintf(stderr, "ERROR: message was not handled\n");
-
-	if(worker != NULL)
-		freeWorkerData(worker);
-	if(server != NULL)
-		freeServerData(server);
 	return msgHandled;
 }
 
 void socketSendPrimeRanges(const int socket, serverDataPtr server,
-		workerDataPtr worker, listPtr ranges)
+		workerDataPtr worker)
 {
 	xmlDocPtr doc = xmlDocCreate();
 	xmlNodePtr msgNode = xmlNodeCreateMsg();
@@ -235,10 +230,12 @@ void socketSendPrimeRanges(const int socket, serverDataPtr server,
 	xmlDocSetRootElement(doc, msgNode);
 	xmlAddChild(msgNode, serverNode);
 	xmlAddChild(msgNode, workerNode);
-	listElemPtr elem;
-	for(elem = listElemGetFirst(ranges); elem; elem = elem->next)
+	size_t i;
+	for(i = 0; i < worker->processes; ++i)
 	{
-		processDataPtr process = (processDataPtr)elem->val;
+		processDataPtr process = (processDataPtr)worker->processesData[i];
+		if(process == NULL)
+			continue;
 		xmlNodePtr processNode = xmlNodeCreateProcessData(process, false);
 		xmlAddChild(msgNode, processNode);
 	}
@@ -304,23 +301,21 @@ bool socketRespondToHandshake(const int socket, serverDataPtr server,
 		newWorker->processes = worker->processes; //listLength(ranges) wrong
 		newWorker->processesData =
 			(processDataPtr*)malloc(newWorker->processes * sizeof(processDataPtr));
+		size_t i;
+		for(i = 0; i < newWorker->processes; ++i)
+			newWorker->processesData[i] = NULL;
 		newWorker->status = STATUS_GENERATING;
 		time(&newWorker->now);
 		newWorker->statusSince = newWorker->now;
 		movePrimeRangesToWorker(ranges, newWorker);
+		listFree(ranges);
 		server->workersActive += 1;
 		listElemInsertEnd(server->workersActiveData, (data_type)newWorker);
-		socketSendPrimeRanges(socket, server, newWorker, ranges);
+		socketSendPrimeRanges(socket, server, newWorker);
 		result = true;
 	}
 	else if(listLength(ranges) == 0)
-	{
-		// received broadcast, but all prime ranges are allocated
-		result = true;
-	}
-	//else
-	//	fprintf(stderr, "ERROR: wrong number of prime ranges to send\n");
-	listFree(ranges);
+		result = true; // received broadcast, but all prime ranges are allocated
 	return result;
 }
 
@@ -359,12 +354,12 @@ bool socketRespondToRequest(const int socket, serverDataPtr server,
 		time(&worker->now);
 		worker->statusSince = worker->now;
 		movePrimeRangesToWorker(ranges, worker);
-		socketSendPrimeRanges(socket, server, worker, ranges);
+		listFree(ranges);
+		socketSendPrimeRanges(socket, server, worker);
 		result = true;
 	}
 	else if(listLength(ranges) == 0)
 		result = true; // received request, but all prime ranges are allocated
-	listFree(ranges);
 	return result;
 }
 
@@ -381,11 +376,6 @@ bool socketRespondToPrimes(const int socket, serverDataPtr server,
 	for(e = listElemGetFirst(processes); e; e = e->next)
 	{
 		processDataPtr proc = (processDataPtr)e->val;
-		if(sentConfirmation)
-		{
-			freeProcessData(proc);
-			continue;
-		}
 		size_t i;
 		for(i = 0; i < active->processes; ++i)
 		{
@@ -417,7 +407,8 @@ bool socketRespondToPrimes(const int socket, serverDataPtr server,
 			if(sentConfirmation)
 				break;
 		}
-		freeProcessData(proc);
+		if(sentConfirmation)
+			break;
 	}
 
 	if(sentConfirmation)
@@ -452,8 +443,16 @@ listPtr createNewPrimeRanges(serverDataPtr server, workerDataPtr worker)
 	{
 		processDataPtr range = allocProcessData();
 		if(!setPrimeRange(server, ranges, worker->processes-1-i, range))
+		{
+			freeProcessData(range);
 			break;
+		}
 		listElemInsertEnd(ranges, (data_type)range);
+	}
+	if(listLength(ranges) == 0)
+	{
+		listFree(ranges);
+		ranges = NULL;
 	}
 	return ranges;
 }
@@ -466,12 +465,17 @@ void movePrimeRangesToWorker(listPtr ranges, workerDataPtr worker)
 	{
 		if(elem)
 		{
-			worker->processesData[i] = allocProcessData();
-			processDataPtr newProcess = worker->processesData[i];
 			processDataPtr range = (processDataPtr)elem->val;
-			newProcess->primeFrom = range->primeFrom;
-			newProcess->primeTo = range->primeTo;
-			newProcess->primeRange = range->primeRange;
+			if(worker->processesData[i] != NULL)
+				freeProcessData(worker->processesData[i]);
+			worker->processesData[i] = range;
+			elem->val = NULL;
+			//worker->processesData[i] = allocProcessData();
+			//processDataPtr newProcess = worker->processesData[i];
+			//newProcess->primeFrom = range->primeFrom;
+			//newProcess->primeTo = range->primeTo;
+			//newProcess->primeRange = range->primeRange;
+			//freeProcessData(range);
 			elem = elem->next;
 		}
 		else

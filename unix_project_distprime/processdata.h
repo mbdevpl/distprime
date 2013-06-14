@@ -14,6 +14,7 @@ struct _processData
 	int64_t primeFrom;
 	int64_t primeTo;
 	int64_t primeRange;
+	// enum from PROCSTATUS_...
 	int status;
 	time_t started;
 	time_t finished;
@@ -43,6 +44,8 @@ processDataPtr matchProcess(processDataPtr match, listPtr list);
 listPtr stringToPrimes(const char* buffer, int bufferLen);
 
 size_t primesToString(listPtr primes, char* buffer, int bufferLen);
+
+void freePrimesList(listPtr primes);
 
 void listElemInsertEndPrime(listPtr primes, int64_t value);
 

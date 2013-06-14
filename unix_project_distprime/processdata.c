@@ -8,6 +8,8 @@ processDataPtr allocProcessData()
 
 	process->pipeRead = 0;
 	process->pipeWrite = 0;
+	process->pipeReadBuf = NULL;
+	process->pipeReadBufCount = 0;
 	process->primeFrom = 0;
 	process->primeTo = 0;
 	process->primeRange = 0;
@@ -22,8 +24,14 @@ processDataPtr allocProcessData()
 
 void freeProcessData(processDataPtr process)
 {
+	if(process == NULL)
+		return;
 	process->pipeRead = 0;
 	process->pipeWrite = 0;
+	freePrimesList(process->primes);
+	freePrimesList(process->confirmed);
+	if(process->pipeReadBuf != NULL)
+		free(process->pipeReadBuf);
 	free(process);
 }
 
@@ -76,12 +84,10 @@ xmlNodePtr xmlNodeCreateProcessData(processDataPtr process, bool includePrimes)
 
 	memset(temp, '\0', 32 * sizeof(char));
 	sprintf(temp, "%" PRId64 "", process->primeFrom);
-	//lltoa(process->primesFrom, temp);
 	xmlNewProp(node, XMLCHARS "primeFrom", XMLCHARS temp);
 
 	memset(temp, '\0', 32 * sizeof(char));
 	sprintf(temp, "%" PRId64 "", process->primeTo);
-	//lltoa(process->primesTo, temp);
 	xmlNewProp(node, XMLCHARS "primeTo", XMLCHARS temp);
 
 	memset(temp, '\0', 32 * sizeof(char));
@@ -140,35 +146,34 @@ xmlNodePtr xmlNodeCreateProcessDataAltered(processDataPtr process,
 processDataPtr xmlNodeParseProcessData(xmlNodePtr node)
 {
 	processDataPtr process = allocProcessData();
-
 	xmlAttrPtr attr = node->properties;
 	for(;attr;attr=attr->next)
 	{
 		const char* attrName = CHARS attr->name;
+		xmlChar* content = xmlNodeGetContent(attr->children);
 		if(strncmp(attrName, "primeFrom", 10) == 0)
-			process->primeFrom = strtoull(CHARS xmlNodeGetContent(attr->children), NULL, 10);
+			process->primeFrom = strtoull(CHARS content, NULL, 10);
 		else if(strncmp(attrName, "primeTo", 8) == 0)
-			process->primeTo = strtoull(CHARS xmlNodeGetContent(attr->children), NULL, 10);
+			process->primeTo = strtoull(CHARS content, NULL, 10);
 		else if(strncmp(attrName, "status", 7) == 0)
-			process->status = atoi(CHARS xmlNodeGetContent(attr->children));
+			process->status = atoi(CHARS content);
+		if(content != NULL)
+			free(content);
 	}
-
-	char* content = (char*) xmlNodeGetContent(node);
-	size_t contentLen = strlen(content);
-	if(contentLen > 0)
 	{
-		process->primes = stringToPrimes(content, contentLen);
-	}
-
-	if(process->primeFrom < 1 || process->primeTo < 1
-			|| process->primeFrom > process->primeTo)
-	{
-		//freeProcessData(process);
-		return NULL;
+		xmlChar* content = xmlNodeGetContent(node);
+		size_t contentLen = strlen(CHARS content);
+		if(contentLen > 0)
+			process->primes = stringToPrimes(CHARS content, contentLen);
+		if(content != NULL)
+			free(content);
 	}
 	process->primeRange = process->primeTo - process->primeFrom + 1;
-
-	return process;
+	if(process->primeFrom >= 1 && process->primeTo >= 1
+			&& process->primeFrom <= process->primeTo)
+		return process;
+	freeProcessData(process);
+	return NULL;
 }
 
 processDataPtr matchProcess(processDataPtr match, listPtr list)
@@ -245,6 +250,17 @@ size_t primesToString(listPtr primes, char* buffer, int bufferLen)
 		//printf(" buf: %s\n", buffer);
 	}
 	return pos;
+}
+
+void freePrimesList(listPtr primes)
+{
+	if(primes == NULL)
+		return;
+	listElemPtr e;
+	for(e = listElemGetFirst(primes); e; e = e->next)
+		if(e->val != NULL)
+			free(e->val);
+	listFree(primes);
 }
 
 void listElemInsertEndPrime(listPtr primes, int64_t value)

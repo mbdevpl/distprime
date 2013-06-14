@@ -7,10 +7,11 @@
 struct _workerData
 {
 	struct sockaddr_in address;
-	unsigned int hash;
+	unsigned long long hash;
 	unsigned int id;
 	size_t processes;
 	processDataPtr* processesData;
+	// enum from STATUS_...
 	int status;
 	time_t statusSince;
 	time_t now;
@@ -27,5 +28,7 @@ void printWorkerData(workerDataPtr worker);
 xmlNodePtr xmlNodeCreateWorkerData(workerDataPtr worker);
 
 workerDataPtr xmlNodeParseWorkerData(xmlNodePtr node);
+
+unsigned long long getHash();
 
 #endif // WORKERDATA_H

@@ -33,3 +33,4 @@ OTHER_FILES += \
 	readme.html \
 	testxml.xml \
 	compress.sh \
+	debug.sh \

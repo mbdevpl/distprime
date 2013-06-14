@@ -110,8 +110,8 @@ size_t socketReceive(const int socket, struct sockaddr_in* senderAddress,
 	socklen_t senderAddressSize = (socklen_t)sizeof(*senderAddress);
 	int receivedBytes = 0;
 	memset(buffer, '\0', bufferLen * sizeof(char));
-	if((receivedBytes = recvfrom(socket, buffer, bufferLen, 0,
-			(struct sockaddr*)senderAddress, &senderAddressSize)) < 0)
+	if((receivedBytes = TEMP_FAILURE_RETRY(recvfrom(socket, buffer, bufferLen, 0,
+			(struct sockaddr*)senderAddress, &senderAddressSize))) < 0)
 	{
 		switch(errno)
 		{
@@ -167,7 +167,6 @@ int processXml(xmlDocPtr doc, serverDataPtr* server, workerDataPtr* worker,
 {
 	if(doc == NULL)
 		return -1;
-
 	listPtr contentTypes = listCreate();
 	listPtr content = listCreate();
 	preprocessXml(doc, contentTypes, content);
@@ -176,50 +175,47 @@ int processXml(xmlDocPtr doc, serverDataPtr* server, workerDataPtr* worker,
 	*worker = NULL;
 	*processes = listCreate();
 
-	listElemPtr elem = listElemGetFirst(content);
 	listElemPtr elemType = listElemGetFirst(contentTypes);
+	listElemPtr elem = listElemGetFirst(content);
 	while(elemType)
 	{
 		switch((long int)elemType->val)
 		{
 		case MSGPART_PROCESSDATA:
-			{
-				listElemInsertEnd(*processes, elem->val);
+			listElemInsertEnd(*processes, elem->val);
 #ifdef DEBUG_NETWORK
-				printProcessData((processDataPtr)elem->val);
+			printProcessData((processDataPtr)elem->val);
 #endif
-			} break;
+			break;
 		case MSGPART_WORKERDATA:
-			{
-				if(*worker != NULL)
-					return -1;
-				*worker = (workerDataPtr)elem->val;
+			if(*worker != NULL)
+				return -1;
+			*worker = (workerDataPtr)elem->val;
 #ifdef DEBUG_NETWORK
-				printWorkerData(*worker);
+			printWorkerData(*worker);
 #endif
-			} break;
+			break;
 		case MSGPART_SERVERDATA:
-			{
-				if(*server != NULL)
-					return -1;
-				*server = (serverDataPtr)elem->val;
+
+			if(*server != NULL)
+				return -1;
+			*server = (serverDataPtr)elem->val;
 #ifdef DEBUG_NETWORK
-				printServerData(*server);
+			printServerData(*server);
 #endif
-			} break;
-		//case MSGPART_PING:
-		//	{
-		//	} break;
+			break;
 		default:
 			fprintf(stderr, "ERROR: unsupported content type resulted from preprocessing\n");
 			break;
 		}
-		elem = elem->next;
 		elemType = elemType->next;
+		elem = elem->next;
 	}
+	listFree(contentTypes);
+	listFree(content);
 	if(listLength(*processes) == 0)
 	{
-		//listFree(*processes);
+		listFree(*processes);
 		*processes = NULL;
 	}
 	if(*server == NULL && *worker == NULL)
@@ -232,16 +228,14 @@ void preprocessXml(xmlDocPtr doc, listPtr contentTypes, listPtr content)
 {
 	if(doc == NULL)
 		return;
-
 	int msgType = commGetMsgType(doc);
-
 	switch(msgType)
 	{
 	case MSG_NULL:
-		printf("received non-xml content\n");
+		fprintf(stderr, "INFO: received non-xml content\n");
 		break;
 	case MSG_INVALID:
-		printf("received invalid xml content\n");
+		fprintf(stderr, "INFO: received invalid xml content\n");
 		break;
 	case MSG_VALID:
 		{
@@ -256,7 +250,7 @@ void preprocessXml(xmlDocPtr doc, listPtr contentTypes, listPtr content)
 				{
 				case MSGPART_NULL:
 				case MSGPART_INVALID:
-					printf("message contains invalid part\n");
+					fprintf(stderr, "WARNING: message contains invalid part\n");
 					break;
 				case MSGPART_PROCESSDATA:
 					{
@@ -285,16 +279,11 @@ void preprocessXml(xmlDocPtr doc, listPtr contentTypes, listPtr content)
 						listElemInsertEnd(content, (data_type)server);
 						partHandled = true;
 					} break;
-				//case MSGPART_PING:
-				//	{
-				//		listElemInsertEnd(contentTypes, (data_type)MSGPART_PING);
-				//		listElemInsertEnd(content, (data_type)NULL);
-				//	} break;
 				default:
 					break;
 				}
 				if(!partHandled)
-					printf("message part was outside of protocol\n");
+					fprintf(stderr, "WARNING: message part was outside of the protocol\n");
 			}
 		}
 		break;
@@ -325,6 +314,8 @@ size_t xmlToString(xmlDocPtr doc, char* buffer, const int bufferLen)
 		return 0;
 
 	sprintf(buffer, "%s\n", CHARS xmlBuf);
+	free(xmlBuf);
+
 	return xmlBufSize;
 }
 

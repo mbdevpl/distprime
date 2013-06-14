@@ -8,12 +8,11 @@
 struct _serverData
 {
 	struct sockaddr_in address;
-	unsigned int hash;
+	unsigned long long hash;
 	int64_t primeFrom;
 	int64_t primeTo;
 	// primeTo-primeFrom+1
 	int64_t primeRange;
-	//listPtr primes; // stores int64_t*
 	// global count of confirmed primes
 	int64_t primesCount;
 	// together with worker's hash it is used to identify workers

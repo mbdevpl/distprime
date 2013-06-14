@@ -14,7 +14,7 @@ bool handleMsg(const int socket, workerDataPtr myData, serverDataPtr myServerDat
 		serverDataPtr server, workerDataPtr worker, listPtr processesList);
 int setupSocket(workerDataPtr worker);
 int setupProcessesAndPipes(workerDataPtr worker);
-void cleanupProcessesAndPipes(workerDataPtr myData);
+void cleanupPipes(workerDataPtr myData);
 bool updateStatusIfConfirmedAll(workerDataPtr worker);
 bool updateStatusIfGeneratedAll(workerDataPtr worker);
 
@@ -68,9 +68,13 @@ int main(int argc, char** argv)
 	setSigHandler(handlerSigchldDefault, SIGCHLD);
 
 	workerDataPtr worker = allocWorkerData();
-	worker->hash = rand()%9000000+1000000;
+	worker->hash = getHash();
 	worker->processes = processes;
-	worker->processesData = (processDataPtr*)malloc(processes*sizeof(processDataPtr));
+	worker->processesData =
+		(processDataPtr*)malloc(worker->processes * sizeof(processDataPtr));
+	size_t i;
+	for(i = 0; i < worker->processes; ++i)
+		worker->processesData[i] = NULL;
 
 	serverDataPtr server = allocServerData();
 	server->address.sin_port = htons(SERVER_PORT);
@@ -79,10 +83,8 @@ int main(int argc, char** argv)
 
 	while(TEMP_FAILURE_RETRY(wait(NULL)) >= 0)
 		;
-
 	freeServerData(server);
 	freeWorkerData(worker);
-
 	return EXIT_SUCCESS;
 }
 
@@ -252,23 +254,30 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 
 			// receive xml from the socket
 			xmlDocPtr doc;
-			socketReceive(socket, &addressSender, &doc);
-
-			// parse xml into distprime objects
-			serverDataPtr server;
-			workerDataPtr worker;
-			listPtr processesList;
-			processXml(doc, &server, &worker, &processesList);
-
-			handleMsg(socket, myData, myServerData,
-					&addressSender, server, worker, processesList);
-
+			if(socketReceive(socket, &addressSender, &doc) > 0)
+			{
+				// parse xml into distprime objects
+				serverDataPtr server;
+				workerDataPtr worker;
+				listPtr processesList;
+				if(processXml(doc, &server, &worker, &processesList) >= 0)
+					handleMsg(socket, myData, myServerData,
+							&addressSender, server, worker, processesList);
+				if(worker != NULL)
+					freeWorkerData(worker);
+				if(server != NULL)
+					freeServerData(server);
+				listElemPtr e;
+				for(e = listElemGetFirst(processesList); e; e = e->next)
+					freeProcessData((processDataPtr)e->val);
+				listFree(processesList);
+			}
 			if(doc != NULL)
 				xmlFreeDoc(doc);
 		}
 	}
 	// close all pipes
-	cleanupProcessesAndPipes(myData);
+	cleanupPipes(myData);
 	closeSocket(socket);
 	xmlCleanupParser();
 }
@@ -279,73 +288,46 @@ bool handleMsg(const int socket, workerDataPtr myData, serverDataPtr myServerDat
 		serverDataPtr server, workerDataPtr worker, listPtr processesList)
 {
 	bool msgHandled = false;
-	if(server != NULL)
-	{
-		if(worker != NULL)
-		{
-			if(myData->hash == worker->hash)
-			{
-				if(myData->id == 0)
-				{
-					// received worker id from the server
-					myData->id = worker->id;
-					myServerData->address = *addressSenderPtr;
-					myServerData->hash = server->hash;
-				}
-				else if(myData->id == worker->id)
-				{
-					// nothing
-				}
-				else
-					fprintf(stderr, "ERROR, received id but already have id\n");
-			}
-			else
-				fprintf(stderr, "ERROR, unauthorized worker data sent\n");
-			freeWorkerData(worker);
-			worker = NULL;
-		}
-
-		if(myServerData->hash == server->hash)
-		{
-			if(listLength(processesList) > 0)
-			{
-				if(myData->status == STATUS_IDLE)
-				{
-					msgHandled = receivedPrimeRanges(myData, processesList);
-				}
-				else if(myData->status == STATUS_GENERATING
-					|| myData->status == STATUS_CONFIRMING)
-				{
-					msgHandled = receivedConfirmation(myData, processesList);
-					// received confirmation
-				}
-			}
-			else if(listLength(processesList) == 0)
-			{
-				// received ping request
-				socketSendStatus(socket, myData, myServerData);
-				msgHandled = true;
-			}
-		}
-		else
-			fprintf(stderr, "INFO: message from unauthorized server\n");
-		freeServerData(server);
-		server = NULL;
-	}
-	else
-		fprintf(stderr, "ERROR: no server info in the message\n");
-
+	if(server == NULL)
+		return true;
 	if(worker != NULL)
 	{
-		freeWorkerData(worker);
-		worker = NULL;
+		if(myData->hash == worker->hash)
+		{
+			if(myData->id == 0)
+			{
+				// received worker id from the server
+				myData->id = worker->id;
+				myServerData->address = *addressSenderPtr;
+				myServerData->hash = server->hash;
+			}
+			else if(myData->id == worker->id)
+				; // nothing
+			else
+				fprintf(stderr, "ERROR, received id but already have id\n");
+		}
+		else
+			fprintf(stderr, "ERROR, unauthorized worker data sent\n");
 	}
-
-	if(server != NULL)
+	if(myServerData->hash == server->hash)
 	{
-		freeServerData(server);
-		server = NULL;
+		if(listLength(processesList) > 0)
+		{
+			if(myData->status == STATUS_IDLE)
+				msgHandled = receivedPrimeRanges(myData, processesList);
+			else if(myData->status == STATUS_GENERATING
+				|| myData->status == STATUS_CONFIRMING)
+				msgHandled = receivedConfirmation(myData, processesList);
+		}
+		else if(listLength(processesList) == 0)
+		{
+			// received status request
+			socketSendStatus(socket, myData, myServerData);
+			msgHandled = true;
+		}
 	}
+	else
+		fprintf(stderr, "INFO: message from unauthorized server\n");
 	if(!msgHandled)
 		fprintf(stderr, "ERROR: last message was not handled\n");
 	return msgHandled;
@@ -386,17 +368,16 @@ int setupProcessesAndPipes(workerDataPtr worker)
 	return descriptorSetMax;
 }
 
-void cleanupProcessesAndPipes(workerDataPtr myData)
+void cleanupPipes(workerDataPtr myData)
 {
 	size_t i;
 	for(i = 0; i < myData->processes; ++i)
 	{
 		processDataPtr myProcess = myData->processesData[i];
 		closefifo(myProcess->pipeRead);
+		myProcess->pipeRead = 0;
 		closefifo(myProcess->pipeWrite);
-		free(myProcess->pipeReadBuf);
-		listFree(myProcess->primes);
-		listFree(myProcess->confirmed);
+		myProcess->pipeWrite = 0;
 	}
 }
 
@@ -424,6 +405,7 @@ bool updateStatusIfConfirmedAll(workerDataPtr worker)
 		myProcess->primeRange = 0;
 		myProcess->started = 0;
 		myProcess->finished = 0;
+		// TODO also clear primes!
 		listClear(myProcess->primes);
 	}
 	worker->status = STATUS_IDLE;
@@ -608,42 +590,40 @@ bool receivedPrimeRanges(workerDataPtr worker, listPtr ranges)
 		if(range->status != PROCSTATUS_COMPUTING)
 			return true;
 	}
-	if(listLength(ranges) > 0/*== worker->processes*/)
+	if(listLength(ranges) == 0)
 	{
-		// received new orders
-		size_t index = 0;
-		listElemPtr elem;
-		for(elem = listElemGetFirst(ranges); elem; elem = elem->next)
-		{
-			processDataPtr range = (processDataPtr)elem->val;
-			processDataPtr myProcess = worker->processesData[index];
-			time(&myProcess->started);
-			myProcess->primeFrom = range->primeFrom;
-			myProcess->primeTo = range->primeTo;
-			myProcess->primeRange = range->primeRange;
-			myProcess->status = PROCSTATUS_COMPUTING;
-			invokePrimesGenerator(myProcess);
-			++index;
-			freeProcessData(range);
-		}
-		if(index < worker->processes)
-		{
-			// set remaining processes to stubs
-			for(;index < worker->processes; ++index)
-			{
-				processDataPtr myProcess = worker->processesData[index];
-				myProcess->primeFrom = 0;
-				myProcess->primeTo = 0;
-				myProcess->primeRange = 0;
-				myProcess->status = PROCSTATUS_IDLE;
-			}
-		}
-		worker->status = STATUS_GENERATING;
-		return true;
-	}
-	else
 		fprintf(stderr, "ERROR: incorrect number of processes\n");
-	return false;
+		return false;
+	}
+	// received new orders
+	size_t index = 0;
+	listElemPtr elem;
+	for(elem = listElemGetFirst(ranges); elem; elem = elem->next)
+	{
+		processDataPtr range = (processDataPtr)elem->val;
+		processDataPtr myProcess = worker->processesData[index];
+		time(&myProcess->started);
+		myProcess->primeFrom = range->primeFrom;
+		myProcess->primeTo = range->primeTo;
+		myProcess->primeRange = range->primeRange;
+		myProcess->status = PROCSTATUS_COMPUTING;
+		invokePrimesGenerator(myProcess);
+		++index;
+	}
+	if(index < worker->processes)
+	{
+		// set remaining processes to stubs
+		for(;index < worker->processes; ++index)
+		{
+			processDataPtr myProcess = worker->processesData[index];
+			myProcess->primeFrom = 0;
+			myProcess->primeTo = 0;
+			myProcess->primeRange = 0;
+			myProcess->status = PROCSTATUS_IDLE;
+		}
+	}
+	worker->status = STATUS_GENERATING;
+	return true;
 }
 
 bool receivedConfirmation(workerDataPtr worker, listPtr processesList)
@@ -652,7 +632,7 @@ bool receivedConfirmation(workerDataPtr worker, listPtr processesList)
 	bool movedPrimes = false;
 	size_t i;
 	listElemPtr elem;
-	for(elem = processesList->first; elem; elem = elem->next)
+	for(elem = listElemGetFirst(processesList); elem; elem = elem->next)
 	{
 		processDataPtr process = (processDataPtr)elem->val;
 		for(i = 0; i < worker->processes; ++i)
@@ -666,6 +646,7 @@ bool receivedConfirmation(workerDataPtr worker, listPtr processesList)
 				moveConfirmedPrimes(myProcess->primes,
 					myProcess->confirmed, process->primes);
 				movedPrimes = true;
+				// TODO also clear primes!
 				listClear(myProcess->confirmed);
 				if(myProcess->status == PROCSTATUS_UNCONFIRMED
 					&& listLength(myProcess->primes) == 0)
@@ -810,9 +791,6 @@ void invokePrimesGenerator(processDataPtr process)
 	if(pid == 0)
 	{
 		generatePrimes(process);
-		listFree(process->primes);
-		listFree(process->confirmed);
-		free(process->pipeReadBuf);
 		freeProcessData(process);
 		exitNormal();
 	}
@@ -851,6 +829,7 @@ size_t movePrimesToPipe(processDataPtr process, char* out)
 	out[outCount++] = '\n';
 	out[outCount] = '\0';
 	size_t written = bulk_write(process->pipeWrite, out, outCount);
+	// TODO also clear primes!
 	listClear(process->primes);
 	return written;
 }

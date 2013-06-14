@@ -76,6 +76,10 @@
 #define CERR(source) (fprintf(stderr,"%s at %s:%d\n",source,__FILE__,__LINE__), \
 	exit(EXIT_FAILURE))
 
+// custom output
+#define DEB (fprintf(stderr,"HELLO at %s:%d\n",__FILE__,__LINE__))
+#define DEBOUT(msg) (fprintf(stderr,"%s at %s:%d\n",msg,__FILE__,__LINE__))
+
 void reverse(char* s);
 const char* itoa(int n, char* s);
 const char* ltoa(long n, char* s);
