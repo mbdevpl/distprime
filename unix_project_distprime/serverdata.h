@@ -16,6 +16,8 @@ struct _serverData
 	//listPtr primes; // stores int64_t*
 	// global count of confirmed primes
 	int64_t primesCount;
+	// together with worker's hash it is used to identify workers
+	unsigned int workerIdSentLast;
 	size_t workersActive;
 	// stores workerDataPtr
 	listPtr workersActiveData;

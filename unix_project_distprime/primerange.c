@@ -103,6 +103,7 @@ int64_t findRangeStartPrecededBy(const int64_t value,
 }
 
 // finds the minimum value not researched for primality
+// TODO: TOO LONG
 int64_t findRangeStart(serverDataPtr server, listPtr excludedRanges)
 {
 #ifdef DEBUG_RANGES
@@ -182,6 +183,7 @@ int64_t findRangeStart(serverDataPtr server, listPtr excludedRanges)
 	return 0LL;
 }
 
+// TODO: TOO LONG
 int64_t findRangeEndLimited(/*serverDataPtr server, listPtr excludedRanges,
 		size_t reserveMore, */const int64_t rangeStart, const int64_t rangeLimit)
 {
@@ -195,20 +197,17 @@ int64_t findRangeEndLimited(/*serverDataPtr server, listPtr excludedRanges,
 		fprintf(stderr, "ERROR: prime range start %lld is invalid, so range end cannot be found\n", rangeStart);
 		return 0LL;
 	}
-	if(rangeStart == 1)
-	{
-		if(FIRSTLIMIT > rangeLimit)
-			return rangeLimit;
-		return FIRSTLIMIT;
-	}
+	//if(rangeStart == 1)
+	//{
+	//	if(FIRSTLIMIT > rangeLimit)
+	//		return rangeLimit;
+	//	return FIRSTLIMIT;
+	//}
 
 	// time needed to generate primes from range [a,b] is equal
 	// integral(sqrt(b))-integral(sqrt(a))
-
 	// integral(sqrt(x)) = (2/3)*(n^(3/2))
-
 	// inverse: ((3/2)^(2/3))*(n^(2/3))
-
 	const double limit = (0.6666667) * pow((double)FIRSTLIMIT, 1.5)
 		- (0.6666667) * pow(1.0, 1.5);
 	// for N=10mln
@@ -277,6 +276,14 @@ int64_t findRangeEndLimited(/*serverDataPtr server, listPtr excludedRanges,
 	if(rangeEnd < 0)
 		rangeEnd = 0;
 
+if(rangeStart < FIRSTLIMIT)
+{
+	double ratio = (FIRSTLIMIT-rangeStart)+FIRSTLIMIT/2;
+	ratio /= (FIRSTLIMIT+FIRSTLIMIT);
+	ratio *= rangeEnd;
+	rangeEnd = (int64_t)llround(ratio);
+}
+
 	if(rangeEnd > rangeLimit - rangeStart)
 		rangeEnd = rangeLimit;
 	else
@@ -292,6 +299,7 @@ int64_t findRangeEndLimited(/*serverDataPtr server, listPtr excludedRanges,
 	return rangeEnd;
 }
 
+// TODO: TOO LONG
 int64_t findRangeEnd(serverDataPtr server, listPtr excludedRanges,
 		size_t reserveMore, const int64_t rangeStart)
 {
@@ -329,14 +337,12 @@ int64_t findRangeEnd(serverDataPtr server, listPtr excludedRanges,
 
 		minimum = findRangeEndLimited(/*server, excludedRanges,
 			reserveMore, */rangeStart, minimum - 1);
-
 #ifdef DEBUG_RANGES
 		printf("findRangeEnd(server, rangeStart) returns:\n");
 		printf("  minimum=%lld\n", minimum);
 #endif
 		return minimum;
 	}
-
 	fprintf(stderr, "ERROR: didn't get the proper prime range end\n");
 	return 0LL;
 }

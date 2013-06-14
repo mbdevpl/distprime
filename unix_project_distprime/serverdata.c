@@ -3,6 +3,8 @@
 serverDataPtr allocServerData()
 {
 	serverDataPtr server = (serverDataPtr)malloc(sizeof(serverData));
+	if(server == 0)
+		ERR("malloc");
 
 	memset(&server->address, 0, sizeof(struct sockaddr_in));
 	server->hash = 0;
@@ -10,6 +12,7 @@ serverDataPtr allocServerData()
 	server->primeTo = 0;
 	server->primeRange = 0;
 	server->primesCount = 0;
+	server->workerIdSentLast = 0;
 	server->workersActive = 0;
 	server->workersActiveData = listCreate();
 	server->processesDone = 0;

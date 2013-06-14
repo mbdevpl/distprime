@@ -20,7 +20,15 @@
 
 #include <stdlib.h>
 #include <malloc.h>
-#include <time.h>
+
+#ifndef ERR
+#include <sys/types.h>
+#include <signal.h>
+// errno error
+#define ERR(source) (fprintf(stderr,"%s:%d\n",__FILE__,__LINE__), \
+	perror(source),kill(0,SIGTERM), \
+	exit(EXIT_FAILURE))
+#endif
 
 // used to print a lot of extra output
 //#define DEBUG_LISTFUNCTIONS

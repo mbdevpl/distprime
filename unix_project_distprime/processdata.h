@@ -33,7 +33,12 @@ void printProcessData(processDataPtr process);
 
 xmlNodePtr xmlNodeCreateProcessData(processDataPtr process, bool includePrimes);
 
+xmlNodePtr xmlNodeCreateProcessDataAltered(processDataPtr process,
+		int64_t* fakePrimes, size_t fakePrimesCount);
+
 processDataPtr xmlNodeParseProcessData(xmlNodePtr node);
+
+processDataPtr matchProcess(processDataPtr match, listPtr list);
 
 listPtr stringToPrimes(const char* buffer, int bufferLen);
 

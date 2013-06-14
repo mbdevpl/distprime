@@ -61,10 +61,12 @@
 	__result; }))
 #endif
 
+#ifndef ERR
 // errno error
 #define ERR(source) (fprintf(stderr,"%s:%d\n",__FILE__,__LINE__), \
 	perror(source),kill(0,SIGTERM), \
 	exit(EXIT_FAILURE))
+#endif
 
 // h_errno error
 #define HERR(source) (fprintf(stderr,"%s(%d) at %s:%d\n",source,h_errno,__FILE__,__LINE__), \

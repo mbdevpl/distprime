@@ -3,6 +3,8 @@
 processDataPtr allocProcessData()
 {
 	processDataPtr process = (processDataPtr)malloc(sizeof(processData));
+	if(process == 0)
+		ERR("malloc");
 
 	process->pipeRead = 0;
 	process->pipeWrite = 0;
@@ -40,8 +42,7 @@ void printProcessData(processDataPtr process)
 		for(elem = listElemGetFirst(process->primes); elem; elem = elem->next)
 		{
 			printf("%llu", valueToPrime(elem->val));
-			if(elem->next)
-				printf(",");
+			if(elem->next) printf(",");
 		}
 		printf("}");
 	}
@@ -53,8 +54,7 @@ void printProcessData(processDataPtr process)
 		for(elem = listElemGetFirst(process->primes); elem; elem = elem->next)
 		{
 			printf("%llu", valueToPrime(elem->val));
-			if(elem->next)
-				printf(",");
+			if(elem->next) printf(",");
 		}
 		printf("}");
 	}
@@ -92,16 +92,48 @@ xmlNodePtr xmlNodeCreateProcessData(processDataPtr process, bool includePrimes)
 	{
 		memset(temp, '\0', 32 * sizeof(char));
 		sprintf(temp, "%u", listLength(process->primes));
-		//ltoa(process->primes->len, temp);
 		xmlNewProp(node, XMLCHARS "primesCount", XMLCHARS temp);
 
 		char buf[BUFSIZE_MAX];
 		memset(buf, '\0', BUFSIZE_MAX * sizeof(char));
 		primesToString(process->primes, buf, BUFSIZE_MAX);
-		//printf("%s\n", buf);
 		xmlNodeSetContent(node, XMLCHARS buf);
 	}
 
+	return node;
+}
+
+xmlNodePtr xmlNodeCreateProcessDataAltered(processDataPtr process,
+		int64_t* fakePrimes, size_t fakePrimesCount)
+{
+	xmlNodePtr node = xmlNodeCreateProcessData(process, false);
+
+	if(fakePrimesCount > 0)
+	{
+		char temp[32];
+
+		memset(temp, '\0', 32 * sizeof(char));
+		sprintf(temp, "%u", fakePrimesCount);
+		xmlNewProp(node, XMLCHARS "primesCount", XMLCHARS temp);
+
+		char buf[BUFSIZE_MAX];
+		memset(buf, '\0', BUFSIZE_MAX * sizeof(char));
+		char* curr = buf;
+		size_t i;
+		for(i = 0; i < fakePrimesCount; ++i)
+		{
+			memset(temp, '\0', 32 * sizeof(char));
+			sprintf(temp, "%lld", fakePrimes[i]);
+			size_t tempLen = strlen(temp);
+			strncpy(curr, temp, tempLen);
+			curr += tempLen;
+			if(i == fakePrimesCount - 1)
+				break;
+			*curr = ',';
+			curr += 1;
+		}
+		xmlNodeSetContent(node, XMLCHARS buf);
+	}
 	return node;
 }
 
@@ -137,6 +169,22 @@ processDataPtr xmlNodeParseProcessData(xmlNodePtr node)
 	process->primeRange = process->primeTo - process->primeFrom + 1;
 
 	return process;
+}
+
+processDataPtr matchProcess(processDataPtr match, listPtr list)
+{
+	if(listLength(list) == 0 || match == NULL)
+		return NULL;
+	listElemPtr e;
+	for(e = listElemGetFirst(list); e; e = e->next)
+	{
+		processDataPtr p = (processDataPtr)e->val;
+		if(p == NULL)
+			continue;
+		if(p->primeFrom == match->primeFrom && p->primeTo == match->primeTo)
+			return match;
+	}
+	return NULL;
 }
 
 listPtr stringToPrimes(const char* buffer, int bufferLen)

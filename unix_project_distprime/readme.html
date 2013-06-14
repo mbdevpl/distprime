@@ -1,0 +1,78 @@
+<! DOCTYPE html>
+<html>
+<head>
+<title>Distprime - Distributed prime numbers discovery</title>
+</head>
+<body>
+<h1>Distprime</h1>
+Unix Programming 2013 project by Mateusz Bysiek
+
+<h2>Overview</h2>
+This program should enable a user to discover primes from given range using many compuers. It is a client-server application that moves most of the computations to the clients. The program is capable of investigating numbers from 1 to <code>INT64_MAX</code>, which usually has value 9223372036854775807 (2 to power 63, minus 1).<br /><br />
+
+This is free software, and it is available here:
+<a href="https://www.assembla.com/code/mini-unix-labs/git/nodes">assembla.com</a>.
+
+<h2>How to use</h2>
+
+<h3>Server</h3>
+To start the server at port 8765 (defined as <code>SERVER_PORT</code>
+in <code>distprimesever.c</code>), enter:<br /><br />
+
+<code>distprime 123400000000 123400500000 primes.log</code><br /><br />
+
+This will start a server that will coordinate discovery
+of prime numbers between 123400000000 and 123400500000 inclusive,
+and save results to <code>primes.log</code>.
+
+<h3>Worker</h3>
+To start worker program, enter:<br /><br />
+
+<code>distprimeworker 8765 4</code><br /><br />
+
+This will launch a worker program that discovers primes in 4 processes in parallel,
+assuming that worker can discover server using UDP broadcast.
+
+<h2>Communication protocol</h2>
+
+<img src="distprime.png" />
+
+The above image shows a general overview of communication protocol used
+in the application. Green lines indicate exchange that does not have connection
+to prime numbers discovery, blue lines indicate inter-process communication
+(either over the network or pipes). Workflow happens from top to bottom unless
+indicated otherwise with an arrow.<br /><br />
+
+This image is just a sketch, actual implementation can handle receiving
+many different messages in different order from many sources.<br /><br />
+
+To avoid certain problems with networking, the maximum number of prime numbers
+sent in one message is 50. This value is a result of an approximation
+that follows.<br /><br />
+
+Each prime number can have at most 19 characters (assuming typical MAXINT_64 value),
+and 50 times 20 is 1000. After adding XML message overhead, we get around 1200 bytes.
+Typical MTU is around 1500, this means that in most cases the packet will not be fragmented.<br /><br />
+
+<h2>Example messages</h2>
+Please see <code>testxml.xml</code>.
+
+<h2>Structures</h2>
+
+There is a 3 level structure of data: serverData depends on workerData,
+which depends on processData.<br /><br />
+
+Server uses all 3 levels to maintain its state.<br /><br />
+
+Worker program uses 2 levels (workerData & processData) to manage its state.<br /><br />
+
+<h2>Testing</h2>
+There are various macros defined for testing the application,
+see source code for details. They are mostly located in <code>defines.h</code>.
+They are disabled by default.<br /><br />
+
+One of the macros simulates the situation in which there is a considerable packet loss, 20%.
+
+</body>
+</html>
+

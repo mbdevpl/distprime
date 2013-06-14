@@ -8,7 +8,7 @@
 // the reference range is from 1 to FIRSTLIMIT, and the value
 // of the integral of the reference range is used to estimate further ranges
 // therefore increasing this value will in general increase allocated ranges
-#define FIRSTLIMIT ((int64_t)30000000LL)
+#define FIRSTLIMIT ((int64_t)20000000LL)
 
 // argument reserveMore is currently not used, but can be used
 // to decrease every allocated primes range by a constant amount

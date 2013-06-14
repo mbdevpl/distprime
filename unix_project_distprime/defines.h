@@ -11,7 +11,7 @@
 
 // prints contents of received network and pipe messages
 //#define DEBUG
-// prints byte counts sent/received
+// prints byte counts sent/received from network/pipes
 //#define DEBUG_IO
 // prints parsed xml message parts recevied from the network
 //#define DEBUG_NETWORK

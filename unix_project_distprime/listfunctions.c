@@ -63,6 +63,8 @@ void listTestAll()
 listPtr listCreate()
 {
 	listPtr list = (listPtr)malloc(sizeof(struct _list));
+	if(list == 0)
+		ERR("malloc");
 	list->first = NULL;
 	list->last = NULL;
 	list->len = 0;
@@ -101,6 +103,8 @@ void listFree(listPtr list)
 listElemPtr listElemCreate(data_type data)
 {
 	listElemPtr newelem=(listElemPtr)malloc(sizeof(struct _listElem));
+	if(newelem == 0)
+		ERR("malloc");
 	newelem->val = data;
 	newelem->next = NULL;
 	newelem->prev = NULL;
@@ -199,11 +203,8 @@ void listMerge(listPtr list1, listPtr list2)
 {
 #ifdef DEBUG_LISTFUNCTIONS
 	printf("listMerge");
-	//listPrintStatistics(list, stdout);
-	printf("1");
-	listPrintErrors(list1, stdout);
-	printf("2");
-	listPrintErrors(list2, stdout);
+	printf("1"); listPrintErrors(list1, stdout);
+	printf("2"); listPrintErrors(list2, stdout);
 #endif
 	if(listLength(list2) == 0)
 	{
@@ -217,12 +218,6 @@ void listMerge(listPtr list1, listPtr list2)
 	}
 	else
 	{
-		//if(list1->last == NULL || list2->first == NULL)
-		//{
-		//	listPrintStatistics(list1, stdout);
-		//	listPrintStatistics(list2, stdout);
-		//	printf(" - lists not ready!\n");
-		//}
 		list1->last->next = list2->first;
 		list2->first->prev = list1->last;
 		list1->last = list2->last;
@@ -236,11 +231,8 @@ void listMerge(listPtr list1, listPtr list2)
 		free(list2);
 	}
 #ifdef DEBUG_LISTFUNCTIONS
-	//listPrintStatistics(list, stdout);
-	printf("1");
-	listPrintErrors(list1, stdout);
-	printf("2");
-	listPrintErrors(list2, stdout);
+	printf("1"); listPrintErrors(list1, stdout);
+	printf("2"); listPrintErrors(list2, stdout);
 	printf("\n");
 #endif
 }
@@ -436,25 +428,14 @@ void listPrintErrors(listPtr list, FILE* f)
 				{
 					if(e == list->first)
 					{
-						if(e->prev > 0)
-							fprintf(f, ";first elem has prev");
+						if(e->prev > 0) fprintf(f, ";first elem has prev");
 					}
-					else
-					{
-						if(e->prev == NULL)
-							fprintf(f, ";%u prev is null", i);
-					}
-
+					else if(e->prev == NULL) fprintf(f, ";%u prev is null", i);
 					if(e == list->last)
 					{
-						if(e->next > 0)
-							fprintf(f, ";%u last elem has next", i);
+						if(e->next > 0) fprintf(f, ";%u last elem has next", i);
 					}
-					else
-					{
-						if(e->next == NULL)
-							fprintf(f, ";%u next is null", i);
-					}
+					else if(e->next == NULL) fprintf(f, ";%u next is null", i);
 					e = e->next;
 					if(e == list->first)
 						return;
@@ -463,7 +444,8 @@ void listPrintErrors(listPtr list, FILE* f)
 			}
 		}
 	}
-	else fprintf(f, "null");
+	else
+		fprintf(f, "null");
 	fprintf(f, "]");
 }
 

@@ -44,6 +44,7 @@ void socketBind(int socket, struct sockaddr_in* addr)
 		ERR("bind");
 }
 
+// TODO: slightly too long
 size_t socketSend(const int socket, const struct sockaddr_in* address,
 		const xmlDocPtr doc)
 {
@@ -99,6 +100,7 @@ size_t socketSend(const int socket, const struct sockaddr_in* address,
 	return sentBytes;
 }
 
+// TODO: slighlty too long
 size_t socketReceive(const int socket, struct sockaddr_in* senderAddress,
 		xmlDocPtr* doc)
 {
@@ -159,6 +161,7 @@ xmlNodePtr xmlNodeCreatePing()
 	return node;
 }
 
+// TODO: TOO LONG
 int processXml(xmlDocPtr doc, serverDataPtr* server, workerDataPtr* worker,
 		listPtr* processes)
 {
@@ -224,6 +227,7 @@ int processXml(xmlDocPtr doc, serverDataPtr* server, workerDataPtr* worker,
 	return 0;
 }
 
+// TODO: TOO LONG
 void preprocessXml(xmlDocPtr doc, listPtr contentTypes, listPtr content)
 {
 	if(doc == NULL)
@@ -356,142 +360,3 @@ int commGetMsgpartType(xmlNodePtr part)
 
 	return MSGPART_INVALID;
 }
-
-/*
-//xmlNodePtr commCreatePrimerangeNode(int from, int to)
-//{
-//	xmlNodePtr node = xmlNewNode(NULL, XMLCHARS "primerange");
-
-//	char temp[32];
-
-//	memset(temp, '\0', 32 * sizeof(char));
-//	itoa(from, temp);
-//	xmlNewProp(node, XMLCHARS "from", XMLCHARS temp);
-
-//	memset(temp, '\0', 32 * sizeof(char));
-//	itoa(to, temp);
-//	xmlNewProp(node, XMLCHARS "to", XMLCHARS temp);
-
-//	return node;
-//}
-
-//xmlNodePtr commCreatePrimesNode(const int64_t* primes, const int primesCount)
-//{
-//	xmlNodePtr node = xmlNewNode(NULL, XMLCHARS "prime");
-
-//	char temp[20];
-
-//	memset(temp, '\0', 20 * sizeof(char));
-//	itoa(primesCount, temp);
-//	xmlNewProp(node, XMLCHARS "count", XMLCHARS temp);
-
-//	char tempArr[20*primesCount];
-//	memset(tempArr, '\0', 20*primesCount * sizeof(char));
-
-//	int i;
-//	int pos = 0;
-//	int len;
-//	for(i = 0; i < primesCount; ++i)
-//	{
-//		memset(temp, '\0', 20 * sizeof(char));
-//		lltoa(primes[i], temp);
-//		len = strlen(temp);
-//		strncpy(tempArr+pos, temp, len);
-//		pos+=len;
-//		if(i == primesCount-1)
-//			break;
-//		tempArr[pos] = ',';
-//		++pos;
-//	}
-//	xmlNodeSetContentLen(node, XMLCHARS tempArr, strlen(tempArr));
-
-//	return node;
-//}
-
-//void createSocketOut(int* socketOut, struct sockaddr_in* addr,
-//		uint32_t addressOut, in_port_t portOut)
-//{
-//	*socketOut = makeSocket(PF_INET, SOCK_DGRAM);
-
-//	if(addressOut == INADDR_BROADCAST)
-//	{
-//		int broadcastEnable=1;
-//		if(setsockopt(*socketOut, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, (socklen_t)sizeof(broadcastEnable)) < 0)
-//			ERR("setsocketopt");
-//	}
-
-//	memset(addr, '\0', sizeof(struct sockaddr_in));
-//	addr->sin_family = AF_INET;
-//	addr->sin_addr.s_addr = htonl(addressOut);
-//	addr->sin_port = htons(portOut);
-//}
-
-//void socketOutSend(const int socketOut, char* bufferOut, const int bufferLen,
-//		const struct sockaddr_in* addrOut, int* sentBytes)
-//{
-//	//xmlDocPtr doc;
-
-//	*sentBytes = 0;
-//	if((*sentBytes = sendto(socketOut, bufferOut, bufferLen, 0,
-//			(const struct sockaddr *)addrOut, sizeof(struct sockaddr_in))) < 0)
-//	{
-//		ERR("sendto");
-//	}
-
-//	if(*sentBytes < bufferLen)
-//		printf(" * wanted to send %d bytes but sent less", bufferLen);
-
-//	printf(" * sent %d bytes to %s:%d\n", *sentBytes,
-//		inet_ntoa(addrOut->sin_addr), ntohs(addrOut->sin_port));
-//}
-
-//void createSocketIn(int* socketIn, struct sockaddr_in* addr,
-//		uint32_t addressIn, in_port_t portIn, const int timeoutSeconds)
-//{
-//	*socketIn = makeSocket(PF_INET,SOCK_DGRAM);
-
-//	int reuseAddr = 1;
-//	if(setsockopt(*socketIn, SOL_SOCKET, SO_REUSEADDR, &reuseAddr, (socklen_t)sizeof(reuseAddr)) < 0)
-//		ERR("setsockopt");
-
-//	if(timeoutSeconds > 0)
-//	{
-//		struct timeval tv;
-//		tv.tv_sec = timeoutSeconds;
-//		tv.tv_usec = 0;
-//		if(setsockopt(*socketIn, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(struct timeval)) < 0)
-//			ERR("setsockopt");
-//	}
-
-//	memset(addr, '\0', sizeof(struct sockaddr_in));
-//	addr->sin_family = AF_INET;
-//	addr->sin_addr.s_addr = htonl(addressIn);
-//	addr->sin_port = htons(portIn);
-
-//	if(bind(*socketIn, (struct sockaddr*)addr, sizeof(*addr)) < 0)
-//		ERR("bind");
-//}
-
-//void socketInReceive(const int socketIn, char* bufferIn, const int bufferLen,
-//		struct sockaddr_in* addrSender, int* receivedBytes)
-//{
-//	socklen_t addrSenderSize = (socklen_t)sizeof(*addrSender);
-//	*receivedBytes = 0;
-//	memset(bufferIn, '\0', bufferLen * sizeof(char));
-//	if((*receivedBytes = recvfrom(socketIn, bufferIn, bufferLen, 0,
-//			(struct sockaddr*)addrSender, &addrSenderSize)) < 0)
-//	{
-//		switch(errno)
-//		{
-//		case EAGAIN:
-//			*receivedBytes = 0;
-//			return;
-//		default:
-//			ERR("recvfrom");
-//		}
-//	}
-
-//	printf(" * received %d bytes from %s:%d\n", *receivedBytes,
-//		inet_ntoa(addrSender->sin_addr), ntohs(addrSender->sin_port));
-//}
-*/

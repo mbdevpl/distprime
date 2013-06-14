@@ -1,6 +1,8 @@
 #include "distprimecommon.h"
 
-#define NETWORK_TIMEOUT 5 // seconds
+#define WORKER_SELECT_TIMEOUT 5 // seconds
+
+#define WORKER_SOCKET_TIMEOUT 1 // seconds
 
 void usage();
 int main(int argc, char** argv);
@@ -37,7 +39,7 @@ void usage()
 int main(int argc, char** argv)
 {
 	printf("distprimeworker\n");
-	printf("Distributed prime numbers generation worker\n\n");
+	printf("Distributed prime numbers discovery worker\n\n");
 
 	if(argc != 3)
 		usage();
@@ -70,6 +72,7 @@ int main(int argc, char** argv)
 }
 
 // server and worker not needed
+// TODO: TOO LONG !!!!
 bool readPrimesFromPipe(workerDataPtr worker,
 		serverDataPtr server, processDataPtr process)
 {
@@ -285,11 +288,12 @@ int setupSocket(workerDataPtr worker)
 {
 	int socket = 0;
 	addressCreate(&worker->address, INADDR_ANY, (in_port_t)(rand()%10001 + 5000));
-	socketCreate(&socket, NETWORK_TIMEOUT, true, true);
+	socketCreate(&socket, WORKER_SOCKET_TIMEOUT, true, true);
 	socketBind(socket, &worker->address);
 	return socket;
 }
 
+// TODO: TOO LONG 250 lines WTF
 void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 {
 	// setup
@@ -306,8 +310,11 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 	struct sockaddr_in addressSender;
 	bool keepAlive = true;
 	size_t timeoutCount = 0;
+	time_t primesSent = 0;
+	time(&primesSent);
 	while(keepAlive)
 	{
+		time(&myData->now);
 		// reset the descriptor set
 		FD_ZERO(&descriptorSet);
 		FD_SET(socket, &descriptorSet);
@@ -319,14 +326,35 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 					FD_SET(myData->processesData[i]->pipeRead, &descriptorSet);
 		}
 
-		if(timeoutCount == 0
-			&& myData->status == STATUS_IDLE && myData->id > 0)
+		if(timeoutCount == 0)
 		{
-			socketSendRequest(socket, myData, myServerData);
+			switch(myData->status)
+			{
+			case STATUS_IDLE:
+				if(myData->id > 0)
+					socketSendRequest(socket, myData, myServerData);
+				break;
+			case STATUS_CONFIRMING:
+				{
+					if(myData->now - primesSent > WORKER_SELECT_TIMEOUT)
+					{
+						size_t i;
+						for(i = 0; i < myData->processes; ++i)
+						{
+							processDataPtr myProcess = myData->processesData[i];
+							if(myProcess->status != PROCSTATUS_IDLE)
+								socketSendPrimes(socket, myData, myServerData, myProcess);
+						}
+						time(&primesSent);
+					}
+				} break;
+			default:
+				break;
+			}
 		}
 
 		struct timeval descriptorSetTimeout;
-		descriptorSetTimeout.tv_sec = 5;
+		descriptorSetTimeout.tv_sec = WORKER_SELECT_TIMEOUT;
 		descriptorSetTimeout.tv_usec = 0;
 
 		// select all ready descriptors
@@ -485,6 +513,17 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 			else
 				fprintf(stderr, "ERROR: no server info in the message\n");
 
+			if(worker != NULL)
+			{
+				freeWorkerData(worker);
+				worker = NULL;
+			}
+
+			if(server != NULL)
+			{
+				freeServerData(server);
+				server = NULL;
+			}
 
 			if(doc != NULL)
 				xmlFreeDoc(doc);
@@ -504,6 +543,7 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 			closefifo(myProcess->pipeWrite);
 			free(myProcess->pipeReadBuf);
 			listFree(myProcess->primes);
+			listFree(myProcess->confirmed);
 		}
 	}
 	closeSocket(socket);
@@ -529,37 +569,15 @@ void socketSendHandshake(const int socket, workerDataPtr worker,
 		fprintf(stderr, "ERROR: no broadcast sent\n");
 }
 
-void socketSendPrimes(const int socket, workerDataPtr worker,
+// used for short primes list
+bool socketSendPrimesAll(const int socket, workerDataPtr worker,
 		serverDataPtr server, processDataPtr process)
 {
-	//size_t i;
-	//for(i = 0; i < worker->processes; ++i)
-	//{
-	//processDataPtr process = worker->processesData[i];
-
-	size_t primesCount = listLength(process->primes);
-
-	if(primesCount > 50)
-		CERR("can't send that many primes without risking fragmentation");
-
-	//listElemPtr currPrime = process->primes->first;
-	//int64_t primesFrag[50];
-
-	//while(primesCount > 0)
-	//{
-	//size_t j;
-	//size_t max = primesCount > 50 ? 50 : primesCount;
-	//for(j = 0; j < max; ++j)
-	//{
-	//	primesFrag[j] = valueToPrime(currPrime->val);
-	//	currPrime = currPrime->next;
-	//}
-
+	if(listLength(process->primes) > 50)
+		return false;
 	xmlDocPtr doc = xmlDocCreate();
 	xmlNodePtr msgNode = xmlNodeCreateMsg();
 	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
-	//int currCount = 50;
-	//if(primesCount < 50) currCount = primesCount;
 	xmlNodePtr processNode = xmlNodeCreateProcessData(process, true);
 
 	xmlDocSetRootElement(doc, msgNode);
@@ -569,12 +587,66 @@ void socketSendPrimes(const int socket, workerDataPtr worker,
 	// send data to server
 	size_t bytesSent = socketSend(socket, &server->address, doc);
 	xmlFreeDoc(doc);
-
 	if(bytesSent == 0)
-		fprintf(stderr, "ERROR: no primes sent\n");
-	//primesCount -= 50;
-	//}
-	//}
+		fprintf(stderr, "WARNING: didn't send all primes\n");
+	return true;
+}
+
+// used for long primes list
+void socketSendPrimesFragment(const int socket, workerDataPtr worker,
+		serverDataPtr server, processDataPtr process, int64_t* frag, size_t fragLen)
+{
+	xmlDocPtr doc = xmlDocCreate();
+	xmlNodePtr msgNode = xmlNodeCreateMsg();
+	xmlNodePtr workerNode = xmlNodeCreateWorkerData(worker);
+	xmlNodePtr processNode = xmlNodeCreateProcessDataAltered(process, frag, fragLen);
+
+	xmlDocSetRootElement(doc, msgNode);
+	xmlAddChild(msgNode, workerNode);
+	xmlAddChild(msgNode, processNode);
+
+	// send data to server
+	size_t bytesSent = socketSend(socket, &server->address, doc);
+	xmlFreeDoc(doc);
+	if(bytesSent == 0)
+		fprintf(stderr, "WARNING: didn't send primes list section\n");
+}
+
+void socketSendPrimes(const int socket, workerDataPtr worker,
+		serverDataPtr server, processDataPtr process)
+{
+	size_t primesCount = listLength(process->primes);
+	if(primesCount <= 50)
+	{
+		socketSendPrimesAll(socket, worker, server, process);
+	}
+	else
+	{
+		//if(primesCount > 50)
+		//	CERR("can't send that many primes without risking fragmentation");
+		listElemPtr currPrime = listElemGetFirst(process->primes);
+		int64_t frag[50];
+		size_t j;
+		int statusBackup = process->status;
+		if(statusBackup == PROCSTATUS_UNCONFIRMED)
+			process->status = PROCSTATUS_COMPUTING; // to avoid false completion message
+		while(primesCount > 0)
+		{
+			size_t max = primesCount > 50 ? 50 : primesCount;
+			for(j = 0; j < max; ++j)
+			{
+				frag[j] = valueToPrime(currPrime->val);
+				currPrime = currPrime->next;
+			}
+			if(primesCount == max)
+				process->status = statusBackup;
+
+			socketSendPrimesFragment(socket, worker, server, process, frag, j);
+
+			primesCount -= max;
+		}
+		process->status = statusBackup;
+	}
 }
 
 void socketSendRequest(const int socket, workerDataPtr worker,
@@ -619,8 +691,19 @@ void socketSendStatus(const int socket, workerDataPtr worker,
 		fprintf(stderr, "ERROR: no status sent\n");
 }
 
+// TODO: TOO LONG
 bool receivedPrimeRanges(workerDataPtr worker, listPtr ranges)
 {
+	// if any range has wrong status, reutrn true
+	listElemPtr e;
+	for(e = listElemGetFirst(ranges); e; e = e->next)
+	{
+		processDataPtr range = (processDataPtr)e->val;
+		if(range == NULL)
+			CERR("received null range");
+		if(range->status != PROCSTATUS_COMPUTING)
+			return true;
+	}
 	bool result = false;
 	if(listLength(ranges) > 0/*== worker->processes*/)
 	{
@@ -682,6 +765,7 @@ bool receivedConfirmation(workerDataPtr worker, listPtr processesList)
 				moveConfirmedPrimes(myProcess->primes,
 					myProcess->confirmed, process->primes);
 				movedPrimes = true;
+				listClear(myProcess->confirmed);
 				if(myProcess->status == PROCSTATUS_UNCONFIRMED
 					&& listLength(myProcess->primes) == 0)
 					myProcess->status = PROCSTATUS_CONFIRMED;
@@ -708,15 +792,16 @@ void invokePrimesGenerator(processDataPtr process)
 	if(pid == 0)
 	{
 		generatePrimes(process);
-		//sleep(60);
-		//printf("exit!\n");
 		listFree(process->primes);
 		listFree(process->confirmed);
+		free(process->pipeReadBuf);
 		freeProcessData(process);
 		exitNormal();
 	}
 }
 
+// checks if a given number is a prime
+// invoked only by subprocesses
 bool isPrime(int64_t number)
 {
 	if(number <= 1)
@@ -736,13 +821,30 @@ bool isPrime(int64_t number)
 	return true;
 }
 
+// copies primes to pipe and deletes the origin,
+// 'out' is only used to not allocate memory over and over again,
+// it is assumed to be a buffer with length >= BUFSIZE_MAX
+// invoked only by subprocesses
+size_t movePrimesToPipe(processDataPtr process, char* out)
+{
+	size_t outCount = primesToString(process->primes, out, BUFSIZE_MAX);
+	if(outCount >= BUFSIZE_MAX)
+		CERR("too many primes to write at once");
+	out[outCount++] = '\n';
+	out[outCount] = '\0';
+	size_t written = bulk_write(process->pipeWrite, out, outCount);
+	listClear(process->primes);
+	return written;
+}
+
+// main computational procedure
+// invoked only by subprocesses
 void generatePrimes(processDataPtr process)
 {
 	pid_t pid = getpid();
 	int64_t n = 0;
 	const int64_t nMax = (process->primeRange-1) / 10 + 1;
 	char out[BUFSIZE_MAX];
-	size_t outCount;
 
 	fprintf(stdout, "P%d: started, range=[%lld,%lld]\n",
 		pid, process->primeFrom, process->primeTo);
@@ -759,25 +861,15 @@ void generatePrimes(processDataPtr process)
 			}
 			++checked;
 			++n;
-
-			if(n == nMax)
+			if(n == nMax || i == process->primeTo)
 			{
 				n = 0;
 				double percent = (100.0 * checked) / process->primeRange;
 				fprintf(stdout, "P%d: computing: %5.1f%% %8lld/%lld found %7lld primes\n",
 					pid, percent, checked, process->primeRange, discovered);
 			}
-
 			if(listLength(process->primes) == 50)
-			{
-				outCount = primesToString(process->primes, out, BUFSIZE_MAX);
-				if(outCount >= BUFSIZE_MAX)
-					CERR("too many primes to write at once");
-				out[outCount++] = '\n';
-				out[outCount] = '\0';
-				bulk_write(process->pipeWrite, out, outCount);
-				listClear(process->primes);
-			}
+				movePrimesToPipe(process, out);
 			else if(listLength(process->primes) > 50)
 				CERR("primes count larger than 50");
 			if(i == process->primeTo)
@@ -786,10 +878,5 @@ void generatePrimes(processDataPtr process)
 		}
 	fprintf(stdout, "P%d: done\n", pid);
 	listElemInsertEndPrime(process->primes, 0);
-
-	outCount = primesToString(process->primes, out, BUFSIZE_MAX);
-	out[outCount++] = '\n';
-	bulk_write(process->pipeWrite, out, outCount);
-	listClear(process->primes);
+	movePrimesToPipe(process, out);
 }
-

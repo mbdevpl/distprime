@@ -3,6 +3,8 @@
 workerDataPtr allocWorkerData()
 {
 	workerDataPtr worker = (workerDataPtr)malloc(sizeof(workerData));
+	if(worker == 0)
+		ERR("malloc");
 
 	memset(&worker->address, 0, sizeof(struct sockaddr_in));
 	worker->hash = 0;

@@ -11,23 +11,24 @@ SOURCES += \
 	mbdev_unix.c \
 	listfunctions.c \
 	distprimecommon.c \
+	processdata.c \
+	workerdata.c \
+	serverdata.c \
+	primerange.c \
 	distprimeserver.c \
 	distprimeworker.c \
-    workerdata.c \
-    processdata.c \
-    serverdata.c \
-    primerange.c
 
 HEADERS += \
 	mbdev_unix.h \
 	listfunctions.h \
+	defines.h \
 	distprimecommon.h \
-    workerdata.h \
-    processdata.h \
-    serverdata.h \
-    defines.h \
-    primerange.h
+	processdata.h \
+	workerdata.h \
+	serverdata.h \
+	primerange.h \
 
 OTHER_FILES += \
 	Makefile \
+	readme.html \
 	testxml.xml \
