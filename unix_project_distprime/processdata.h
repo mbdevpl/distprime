@@ -43,7 +43,7 @@ processDataPtr matchProcess(processDataPtr match, listPtr list);
 
 listPtr stringToPrimes(const char* buffer, int bufferLen);
 
-size_t primesToString(listPtr primes, char* buffer, int bufferLen);
+size_t primesToString(listPtr primes, char* buffer, const int bufferLen);
 
 void freePrimesList(listPtr primes);
 

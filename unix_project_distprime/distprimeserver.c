@@ -113,10 +113,11 @@ void serverLoop(serverDataPtr myData)
 			serverDataPtr server;
 			workerDataPtr worker;
 			listPtr processesList;
-			if(processXml(doc, &server, &worker, &processesList) < 0)
-				continue;
-			worker->address = addrSender;
-			handleMsg(socket, myData, server, worker, processesList);
+			if(processXml(doc, &server, &worker, &processesList) >= 0)
+			{
+				worker->address = addrSender;
+				handleMsg(socket, myData, server, worker, processesList);
+			}
 			if(worker != NULL)
 				freeWorkerData(worker);
 			if(server != NULL)
@@ -503,7 +504,7 @@ void removeConfirmedPrimes(listPtr list, listPtr confirmed)
 			if(valueToPrime(e1->val) != valueToPrime(e2->val))
 				continue;
 			found = true;
-			break;;
+			break;
 		}
 		if(!found)
 		{
@@ -514,6 +515,7 @@ void removeConfirmedPrimes(listPtr list, listPtr confirmed)
 		e1 = e1->next;
 		if(!listElemDetach(list, temp))
 			CERR("could not remove a confirmed prime");
+		free((int64_t*)temp->val);
 		listElemFree(temp);
 	}
 }

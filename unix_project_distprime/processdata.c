@@ -203,7 +203,8 @@ listPtr stringToPrimes(const char* buffer, int bufferLen)
 		char* nextChar = strchr(start,',');
 		if(nextChar != NULL && nextChar-buffer+1 < bufferLen)
 			*nextChar = '\0';
-		listElemInsertEndPrime(primes, (int64_t)strtoull(start, NULL, 10));
+		int64_t prime = (int64_t)strtoull(start, NULL, 10);
+		listElemInsertEndPrime(primes, prime);
 		++count;
 		if(nextChar == NULL)
 			break;
@@ -213,7 +214,7 @@ listPtr stringToPrimes(const char* buffer, int bufferLen)
 	return primes;
 }
 
-size_t primesToString(listPtr primes, char* buffer, int bufferLen)
+size_t primesToString(listPtr primes, char* buffer, const int bufferLen)
 {
 	if(primes == NULL)
 		return 0;
@@ -232,22 +233,16 @@ size_t primesToString(listPtr primes, char* buffer, int bufferLen)
 		// copy prime to temporary buffer
 		memset(temp, '\0', 20 * sizeof(char));
 		sprintf(temp, "%" PRId64 "", prime);
-		//lltoa(valueToPrime(elem->val), temp);
 		len = strnlen(temp, 21);
-		//printf("temp: %s\n", temp);
-		//if(pos+len > bufferLen)
-		//	break;
-		//if(pos >= bufferLen)
-		//	break;
+		if(pos+len >= bufferLen)
+			CERR("text buffer for primes is too small");
 		strncpy(buffer+pos, temp, len);
 		pos+=len;
 		if(elem->next != NULL)
 		{
 			buffer[pos] = ',';
 			++pos;
-			//++len;
 		}
-		//printf(" buf: %s\n", buffer);
 	}
 	return pos;
 }

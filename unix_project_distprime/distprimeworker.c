@@ -405,7 +405,10 @@ bool updateStatusIfConfirmedAll(workerDataPtr worker)
 		myProcess->primeRange = 0;
 		myProcess->started = 0;
 		myProcess->finished = 0;
-		// TODO also clear primes!
+		listElemPtr e;
+		for(e = listElemGetFirst(myProcess->primes); e; e = e->next)
+			if(e->val != NULL)
+				free((int64_t*)e->val);
 		listClear(myProcess->primes);
 	}
 	worker->status = STATUS_IDLE;
@@ -646,7 +649,10 @@ bool receivedConfirmation(workerDataPtr worker, listPtr processesList)
 				moveConfirmedPrimes(myProcess->primes,
 					myProcess->confirmed, process->primes);
 				movedPrimes = true;
-				// TODO also clear primes!
+				listElemPtr e;
+				for(e = listElemGetFirst(myProcess->confirmed); e; e = e->next)
+					if(e->val != NULL)
+						free((int64_t*)e->val);
 				listClear(myProcess->confirmed);
 				if(myProcess->status == PROCSTATUS_UNCONFIRMED
 					&& listLength(myProcess->primes) == 0)
@@ -729,6 +735,7 @@ bool readPrimesFromPipe(workerDataPtr worker,
 		{
 			if(valueToPrime(listElemGetLast(process->primes)->val) == 0)
 			{
+				free(listElemGetLast(process->primes)->val);
 				listElemRemoveLast(process->primes);
 				time(&process->finished);
 				process->status = PROCSTATUS_UNCONFIRMED;
@@ -829,7 +836,10 @@ size_t movePrimesToPipe(processDataPtr process, char* out)
 	out[outCount++] = '\n';
 	out[outCount] = '\0';
 	size_t written = bulk_write(process->pipeWrite, out, outCount);
-	// TODO also clear primes!
+	listElemPtr e;
+	for(e = listElemGetFirst(process->primes); e; e = e->next)
+		if(e->val != NULL)
+			free((int64_t*)e->val);
 	listClear(process->primes);
 	return written;
 }
