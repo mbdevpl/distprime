@@ -45,6 +45,8 @@ listPtr stringToPrimes(const char* buffer, int bufferLen);
 
 size_t primesToString(listPtr primes, char* buffer, const int bufferLen);
 
+void clearPrimesList(listPtr primes);
+
 void freePrimesList(listPtr primes);
 
 void listElemInsertEndPrime(listPtr primes, int64_t value);

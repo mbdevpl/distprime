@@ -269,7 +269,8 @@ void workerLoop(workerDataPtr myData, serverDataPtr myServerData)
 					freeServerData(server);
 				listElemPtr e;
 				for(e = listElemGetFirst(processesList); e; e = e->next)
-					freeProcessData((processDataPtr)e->val);
+					if(e->val != NULL)
+						freeProcessData((processDataPtr)e->val);
 				listFree(processesList);
 			}
 			if(doc != NULL)
@@ -384,7 +385,7 @@ void cleanupPipes(workerDataPtr myData)
 bool updateStatusIfConfirmedAll(workerDataPtr worker)
 {
 	if(worker->status == STATUS_IDLE)
-	return false;
+		return false;
 	size_t i;
 	bool allFinished = true;
 	for(i = 0; i < worker->processes; ++i)
@@ -405,11 +406,7 @@ bool updateStatusIfConfirmedAll(workerDataPtr worker)
 		myProcess->primeRange = 0;
 		myProcess->started = 0;
 		myProcess->finished = 0;
-		listElemPtr e;
-		for(e = listElemGetFirst(myProcess->primes); e; e = e->next)
-			if(e->val != NULL)
-				free((int64_t*)e->val);
-		listClear(myProcess->primes);
+		clearPrimesList(myProcess->primes);
 	}
 	worker->status = STATUS_IDLE;
 	return true;
@@ -649,11 +646,7 @@ bool receivedConfirmation(workerDataPtr worker, listPtr processesList)
 				moveConfirmedPrimes(myProcess->primes,
 					myProcess->confirmed, process->primes);
 				movedPrimes = true;
-				listElemPtr e;
-				for(e = listElemGetFirst(myProcess->confirmed); e; e = e->next)
-					if(e->val != NULL)
-						free((int64_t*)e->val);
-				listClear(myProcess->confirmed);
+				clearPrimesList(myProcess->confirmed);
 				if(myProcess->status == PROCSTATUS_UNCONFIRMED
 					&& listLength(myProcess->primes) == 0)
 					myProcess->status = PROCSTATUS_CONFIRMED;
@@ -716,6 +709,8 @@ bool readPrimesFromPipe(workerDataPtr worker,
 			if(process->primes == NULL)
 				CERR("primes list is NULL");
 			listMerge(process->primes, newPrimes);
+			freePrimesList(newPrimes);
+			newPrimes = NULL;
 			start += len;
 		}
 		while(newline != NULL);
@@ -836,11 +831,7 @@ size_t movePrimesToPipe(processDataPtr process, char* out)
 	out[outCount++] = '\n';
 	out[outCount] = '\0';
 	size_t written = bulk_write(process->pipeWrite, out, outCount);
-	listElemPtr e;
-	for(e = listElemGetFirst(process->primes); e; e = e->next)
-		if(e->val != NULL)
-			free((int64_t*)e->val);
-	listClear(process->primes);
+	clearPrimesList(process->primes);
 	return written;
 }
 

@@ -124,7 +124,8 @@ void serverLoop(serverDataPtr myData)
 				freeServerData(server);
 			listElemPtr e;
 			for(e = listElemGetFirst(processesList); e; e = e->next)
-				freeProcessData((processDataPtr)e->val);
+				if(e->val != NULL)
+					freeProcessData((processDataPtr)e->val);
 			listFree(processesList);
 		}
 		if(doc != NULL)
@@ -343,7 +344,7 @@ bool socketRespondToRequest(const int socket, serverDataPtr server,
 		// save all primes to text file, and increase counter
 		if(len > 0)
 			savePrimes(activeProcess->confirmed, server->outputPath);
-		listClear(activeProcess->confirmed);
+		clearPrimesList(activeProcess->confirmed);
 		worker->processesData[i] = NULL;
 	}
 	// received subsequent request
@@ -396,14 +397,16 @@ bool socketRespondToPrimes(const int socket, serverDataPtr server,
 				time(&worker->now);
 				worker->statusSince = worker->now;
 				if(activeProcess->confirmed == NULL)
+				{
 					activeProcess->confirmed = proc->primes;
+					proc->primes = NULL;
+				}
 				else
 				{
 					// resolve duplicates
 					removeConfirmedPrimes(proc->primes, activeProcess->confirmed);
 					listMerge(activeProcess->confirmed, proc->primes);
 				}
-				proc->primes = NULL;
 			}
 			if(sentConfirmation)
 				break;

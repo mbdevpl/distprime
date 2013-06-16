@@ -80,14 +80,13 @@ void listElemRemoveLast(listPtr list);
 int listElemDetach(listPtr list, listElemPtr elem);
 void listClear(listPtr list);
 
-
 listElemPtr listElemGetFirst(listPtr list);
 listElemPtr listElemGet(listPtr list, size_t index);
 listElemPtr listElemGetLast(listPtr list);
 size_t listLength(listPtr list);
 
 //rearanging of elements
-void listElemMove(listElemPtr elem, listPtr from, listPtr to);
+int listElemMove(listElemPtr elem, listPtr from, listPtr to);
 
 void listPrint(listPtr list, FILE* f);
 void listPrintStatistics(listPtr list, FILE* f);

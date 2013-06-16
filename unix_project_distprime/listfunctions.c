@@ -229,7 +229,7 @@ void listMerge(listPtr list1, listPtr list2)
 		list2->first = NULL;
 		list2->last = NULL;
 		list2->len = 0;
-		listFree(list2);
+		//listFree(list2);
 	}
 #ifdef DEBUG_LISTFUNCTIONS
 	printf("1"); listPrintErrors(list1, stdout);
@@ -350,16 +350,16 @@ size_t listLength(listPtr list)
 	return list->len;
 }
 
-void listElemMove(listElemPtr elem, listPtr from, listPtr to)
+int listElemMove(listElemPtr elem, listPtr from, listPtr to)
 {
 #ifdef DEBUG_LISTS
 	printf("listElemMove(elem, from, to)\n");
 #endif
 	if(elem == NULL || from == NULL || to == NULL)
-		return;
+		return 0;
 
 	if(!listElemDetach(from, elem))
-		return;
+		return 0;
 
 	if(to->len > 0)
 	{
@@ -373,6 +373,7 @@ void listElemMove(listElemPtr elem, listPtr from, listPtr to)
 		to->last = elem;
 	}
 	to->len += 1;
+	return 1;
 }
 
 // prints the list's contents as a list of pointers
@@ -402,6 +403,23 @@ void listPrintStatistics(listPtr list, FILE* f)
 		fprintf(f, " first=%zu", (size_t)list->first);
 		fprintf(f, " last=%zu", (size_t)list->last);
 		fprintf(f, " len=%zu", list->len);
+		size_t lenforward = 0,lenback = 0;
+		listElemPtr e1 = list->first;
+		listElemPtr e2 = list->last;
+		while(e1 || e2)
+		{
+			if(e1)
+			{
+				++lenforward;
+				e1 = e1->next;
+			}
+			if(e2)
+			{
+				++lenback;
+				e2 = e2->prev;
+			}
+		}
+		fprintf(f, " elemlens=->%zu,<-%zu", lenforward, lenback);
 	}
 	fprintf(f, "]");
 }

@@ -247,6 +247,17 @@ size_t primesToString(listPtr primes, char* buffer, const int bufferLen)
 	return pos;
 }
 
+void clearPrimesList(listPtr primes)
+{
+	if(primes == NULL)
+		return;
+	listElemPtr e;
+	for(e = listElemGetFirst(primes); e; e = e->next)
+		if(e->val != NULL)
+			free((int64_t*)e->val);
+	listClear(primes);
+}
+
 void freePrimesList(listPtr primes)
 {
 	if(primes == NULL)
