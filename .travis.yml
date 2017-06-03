@@ -1,0 +1,11 @@
+sudo: false
+language: c
+os:
+  - linux
+
+compiler:
+  - clang
+  - gcc
+
+script:
+  - cd src && make
