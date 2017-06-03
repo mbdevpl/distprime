@@ -1,4 +1,4 @@
-distprime
-distprimeworker
-*.log
-
+/distprime
+/distprimeworker
+/*.log
+/*.o
