@@ -8,6 +8,10 @@
 Distprime - Distributed prime numbers discovery
 ===============================================
 
+.. image:: https://travis-ci.org/mbdevpl/distprime.svg?branch=master
+    :target: https://travis-ci.org/mbdevpl/distprime
+    :alt: build status from Travis CI
+
 Project for UNIX programming course
 from my Bachelor studies at Warsaw University of Technology.
 
