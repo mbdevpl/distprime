@@ -8,4 +8,8 @@ compiler:
   - gcc
 
 script:
-  - cd src && make
+  - cd src
+  - make
+  - ./distprimeworker 1 & ./distprimeworker 1 & ./distprime 123400000000 123400500000 primes.log
+  - grep -F "123400000033" primes.log
+  - grep -F "123400499977" primes.log

@@ -8,7 +8,12 @@
 Distprime - Distributed prime numbers discovery
 ===============================================
 
-Unix Programming 2013 project by Mateusz Bysiek
+Project for UNIX programming course
+from my Bachelor studies at Warsaw University of Technology.
+
+Mateusz Bysiek
+
+Warsaw, Poland, 2013
 
 --------
 Overview
@@ -18,6 +23,27 @@ This program should enable a user to discover primes from given range using many
 It is a client-server application that moves most of the computations to the clients. The program
 is capable of investigating numbers from 1 to :c:`INT64_MAX`, which usually has value 
 9223372036854775807 (2 to power 63, minus 1).
+
+This program may have no practical value as prime number lookup tool in the age when `largest known
+prime numbers <https://en.wikipedia.org/wiki/Largest_known_prime_number>`_ are more than a million
+digits long. However, implementing it was a good exercise in may aspects of computing.
+
+
+------------
+How to build
+------------
+
+Distprime depends on libxml2, an XML I/O library that is available on all popular
+operating systems.
+
+To build Distprime, simply do:
+
+.. code:: bash
+
+    cd src
+    make
+
+This will create two executables: ``distprime`` and ``distprimeworker``.
 
 
 ----------
@@ -32,7 +58,7 @@ To start the server at port defined as :c:`SERVER_PORT` in ``distprimecommon.h``
 
 .. code:: bash
 
-    distprime 123400000000 123400500000 primes.log
+    ./distprime 123400000000 123400500000 primes.log
 
 This will start a server that will coordinate discovery of prime numbers between 123400000000
 and 123400500000 inclusive, and save results to ``primes.log``.
@@ -45,7 +71,7 @@ To start worker program, enter:
 
 .. code:: bash
 
-    distprimeworker 4
+    ./distprimeworker 4
 
 This will launch a worker program that discovers primes in 4 processes in parallel, 
 assuming that worker can discover server using UDP broadcast. 
