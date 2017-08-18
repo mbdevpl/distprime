@@ -14,3 +14,8 @@ script:
 #  - ./distprime 123400000000 123400500000 primes.log & ./distprimeworker 2
 #  - grep -F "123400000033" primes.log
 #  - grep -F "123400499977" primes.log
+
+notifications:
+  slack:
+    secure: "YVbpTv6n3AMzoQxxoT9rEycoCGkeQRw/aAsMgfEOqKKMmXw+oUwy2a21HmPQEYqCedgcJW8nX8l0zF6dfW2KI/2M0FxDDu+AID4WFbBrGyImB7H4vNO1sbfhdH+v5TmlQ5Ll8U0Eo0/yHT7zBEauJtEimWiGmc/4edgvPYgx4Ih/FAwWWQ+nqapd657NydMNRG2c2vKlFfGxFN565LhCl2x3t9Nh/z20mfdQ90zVpHDcrTYsi8UbG6EeAUzTMUt1O3Och7jGl/wMK7BsuSGLJs05G3hN2dDzyDvkvvfBPsXKWGbD4YxGs3jLkGOb1Zwu7TX3qHSAntBoS+xsyWteoPgUuVpH0rxLSw81f0blnq/3HPVya9XBIMi+/wRMrOQ8BYtnnqrboA+z4XiwF6bKqP6IV5RXVPQ7cpjSvywKDGHh0OxsR9Hxtq8DDjI0j00sDsPTotnr/IcqCp9uAgpdD7jakuxO2MzXD2HbCHq3OlcvWeAmdFtiTWLXr+F0DRkPUiBtUYjS7F1mOXG1O26GbsgkadZ7CX+wmdusrXJUACuwOrJGvI7LTKA9Nxf5bRLMAOAAo6CgGoiGg21il1SKk33ZXTQrA23lpA7403vQL/LrvmnEjNLm0wLQ7smxxYwM15r8c30UCqSNCs7ZphMMbDyNArYOEPqxjOXd3EbdwAg="
+  email: false
